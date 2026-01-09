@@ -148,12 +148,12 @@ EOF
           fi
           
           # 配置 SSH config（使用 su 切换用户）
-          su - $USER -c "cat > ~/.ssh/config <<'EOF'
-      Host $NET.*
-        StrictHostKeyChecking no
-        UserKnownHostsFile=/dev/null
-        ConnectTimeout=10
-      EOF"
+          su - $USER -c "cat > ~/.ssh/config <<EOF
+Host $NET.*
+  StrictHostKeyChecking no
+  UserKnownHostsFile=/dev/null
+  ConnectTimeout=10
+EOF"
           
           # 设置正确的权限
           su - $USER -c "chmod 600 ~/.ssh/config"
@@ -162,7 +162,7 @@ EOF
         SHELL
 
       # --- 同步目录（禁用）---
-      node.vm.synced_folder "./data", "/vagrant"
+      node.vm.synced_folder "./data", "/vagrant", disabled: true
     end
   end
 
