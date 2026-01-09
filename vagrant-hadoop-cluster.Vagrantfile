@@ -106,7 +106,10 @@ EOF
 #{CLUSTER_NET}.102 centos-102
 #{CLUSTER_NET}.103 centos-103
 EOF
-
+        # ---------- 启用 SSH 密码认证 ----------
+        sed -i 's/^PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config || true
+        sed -i 's/^#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config || true
+        systemctl restart sshd
         echo "=== Base setup done for centos-#{i} ==="
       SHELL
 
@@ -232,8 +235,8 @@ EOF"
           echo "Setting up SSH to \$node_name (\$node_ip)..."
           
           # 检查是否已经配置过
-          if ssh -o ConnectTimeout=5 -o BatchMode=yes \
-             \$USER@\$node_ip "echo connected" 2>/dev/null; then
+          if ssh -o "ConnectTimeout=5" -o "BatchMode=yes" \
+             $USER@$node_ip "echo connected" 2>/dev/null; then
             echo "SSH already configured for \$node_name"
             return 0
           fi
@@ -241,27 +244,15 @@ EOF"
           # 使用 sshpass 复制公钥
           echo "Copying SSH key to \$node_name..."
           if sshpass -p "\$PASSWORD" \
-             ssh-copy-id -o StrictHostKeyChecking=no \
-             -o ConnectTimeout=10 \
-             \$USER@\$node_ip 2>/dev/null; then
+             ssh-copy-id -i /home/$USER/.ssh/id_rsa.pub \
+             -o "StrictHostKeyChecking=no" \
+             -o "ConnectTimeout=10" \
+             "\$USER@\$node_ip"; then
             echo "✓ SSH key copied to \$node_name"
             return 0
           else
-            echo "Warning: ssh-copy-id failed for \$node_name, trying manual method..."
-            
-            # 手动方法
-            local PUB_KEY="\$(cat /home/\$USER/.ssh/id_rsa.pub)"
-            
-            if sshpass -p "\$PASSWORD" ssh -o StrictHostKeyChecking=no \
-               \$USER@\$node_ip "mkdir -p ~/.ssh && chmod 700 ~/.ssh" && \
-               sshpass -p "\$PASSWORD" ssh -o StrictHostKeyChecking=no \
-               \$USER@\$node_ip "echo '\$PUB_KEY' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"; then
-              echo "✓ SSH key manually copied to \$node_name"
-              return 0
-            else
-              echo "✗ Failed to configure SSH for \$node_name"
-              return 1
-            fi
+            echo "✗ Failed to configure SSH for \$node_name using ssh-copy-id"
+            return 1
           fi
         }
         
@@ -282,12 +273,12 @@ EOF"
         
         WORKER_NODES=("102" "103")
         ALL_SUCCESS=true
+        SSH_HOME="/home/${USER}"
         
         for node_num in "\${WORKER_NODES[@]}"; do
           NODE_IP="\$NET.\$node_num"
           NODE_NAME="centos-\$node_num"
           
-          echo ""
           echo "--- Configuring \$NODE_NAME ---"
           
           # 等待节点就绪
@@ -300,7 +291,9 @@ EOF"
           # 配置 SSH 免密
           if setup_ssh_to_node "\$NODE_IP" "\$NODE_NAME"; then
             # 从 worker 节点获取公钥并添加到 master
-            WORKER_PUB_KEY="\$(ssh \$USER@\$NODE_IP "cat ~/.ssh/id_rsa.pub" 2>/dev/null)"
+            echo "start setup ssh to \$NODE_IP ..."
+            WORKER_PUB_KEY="$(ssh -o 'StrictHostKeyChecking=no' -o 'BatchMode=yes' -o 'ConnectTimeout=5' \$USER@\$NODE_IP "cat ${SSH_HOME}/.ssh/id_rsa.pub")"
+            echo "Worker(\$NODE_NAME) pub key: \$WORKER_PUB_KEY ..."
             if [ -n "\$WORKER_PUB_KEY" ]; then
               if ! grep -q "\$WORKER_PUB_KEY" /home/\$USER/.ssh/authorized_keys 2>/dev/null; then
                 echo "\$WORKER_PUB_KEY" >> /home/\$USER/.ssh/authorized_keys
@@ -313,7 +306,6 @@ EOF"
         done
         
         # 3. 分发完整的 authorized_keys 到所有节点
-        echo ""
         echo "=== Step 3: Distributing complete authorized_keys ==="
         
         ALL_KEYS="\$(cat /home/\$USER/.ssh/authorized_keys)"
@@ -321,9 +313,7 @@ EOF"
         for node_num in "101" "102" "103"; do
           NODE_IP="\$NET.\$node_num"
           NODE_NAME="centos-\$node_num"
-          
           echo -n "Updating \$NODE_NAME..."
-          
           if ssh \$USER@\$NODE_IP "echo '\$ALL_KEYS' > ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys" 2>/dev/null; then
             echo " ✓"
           else
@@ -333,7 +323,6 @@ EOF"
         done
         
         # 4. 测试 SSH 连接
-        echo ""
         echo "=== Step 4: Testing SSH connections ==="
         
         echo "Testing from master to all nodes:"
