@@ -81,7 +81,7 @@ EOF
         # ---------- 基础工具 ----------
         dnf clean all
         rm -rf /var/cache/dnf/*
-        dnf install -y vim git wget curl net-tools openssh-clients sshpass
+        dnf install -y vim nc git wget curl net-tools openssh-clients sshpass
 
         # ---------- Java ----------
         dnf install -y java-1.8.0-openjdk java-1.8.0-openjdk-devel
