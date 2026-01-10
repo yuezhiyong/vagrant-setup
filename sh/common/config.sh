@@ -1,79 +1,65 @@
 #!/bin/bash
-# 集群公共配置文件
 
-# 集群节点列表
+# ============================================
+# 集群配置文件
+# ============================================
+
+# 集群节点配置
 export CLUSTER_HOSTS=("centos-101" "centos-102" "centos-103")
 
-# 组件安装目录
-export MODULE_HOME="/opt/module"
-export JAVA_HOME="$MODULE_HOME/jdk1.8.0_371"
-export ZK_HOME="$MODULE_HOME/zookeeper-3.7.0"
-export KAFKA_HOME="$MODULE_HOME/kafka_2.13-3.4.0"
-export FLUME_HOME="$MODULE_HOME/flume-1.11.0"
-export HADOOP_HOME="$MODULE_HOME/hadoop-3.3.4"
+# 管理节点（运行控制脚本的节点）
+export MASTER_NODE="centos-101"
 
-# 数据存储目录
-export DATA_HOME="/opt/data"
-export ZK_DATA_DIR="$DATA_HOME/zookeeper"
-export KAFKA_LOG_DIR="$DATA_HOME/kafka"
-export HDFS_DATA_DIR="$DATA_HOME/hadoop"
+# 软件安装路径
+export MODULE_BASE="/opt/module"
+export SCRIPTS_BASE="/opt/sh"
 
-# 日志目录
-export LOG_HOME="/opt/logs"
+# 软件版本配置
+export JDK_HOME="$MODULE_BASE/java"
+export HADOOP_HOME="$MODULE_BASE/hadoop"
+export ZOOKEEPER_HOME="$MODULE_BASE/zookeeper"
+export KAFKA_HOME="$MODULE_BASE/kafka"
+export FLUME_HOME="$MODULE_BASE/flume"
 
-# 颜色输出
-export RED='\033[0;31m'
-export GREEN='\033[0;32m'
-export YELLOW='\033[1;33m'
-export BLUE='\033[0;34m'
-export NC='\033[0m' # No Color
+# Hadoop配置
+export HDFS_NAME_DIR=("$MODULE_BASE/hadoop/name")
+export HDFS_DATA_DIR=("$MODULE_BASE/hadoop/data")
+export HDFS_CHECKPOINT_DIR=("$MODULE_BASE/hadoop/namesecondary")
+export YARN_NODEMANAGER_DIR=("$MODULE_BASE/hadoop/nodemanager")
 
-# 输出函数
-print_info() {
-    echo -e "${BLUE}[INFO]${NC} $1"
-}
+# Hadoop进程用户
+export HADOOP_USER="hadoop"
 
-print_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1"
-}
+# Zookeeper配置
+export ZK_DATA_DIR="$MODULE_BASE/zookeeper/data"
+export ZK_LOG_DIR="$MODULE_BASE/zookeeper/logs"
+export ZK_PID_DIR="/tmp"
+export ZK_PID_FILE="$ZK_PID_DIR/zookeeper.pid"
 
-print_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
-}
+# Kafka配置
+export KAFKA_LOG_DIR="$MODULE_BASE/kafka/logs"
+export KAFKA_PID_DIR="/tmp"
+export KAFKA_PID_FILE="$KAFKA_PID_DIR/kafka.pid"
 
-print_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-}
+# Flume配置
+export FLUME_CONF_DIR="$SCRIPTS_BASE/flume/conf"
+export FLUME_LOG_DIR="$MODULE_BASE/flume/logs"
+export FLUME_PID_DIR="/tmp"
+export FLUME_PID_FILE="$FLUME_PID_DIR/flume.pid"
 
-# 远程执行命令
-remote_exec() {
-    local host=$1
-    local cmd=$2
-    ssh $host "$cmd"
-    return $?
-}
+# SSH配置
+export SSH_OPTS="-o StrictHostKeyChecking=no -o ConnectTimeout=5"
+export SSH_CMD="ssh $SSH_OPTS"
+export SCP_CMD="scp $SSH_OPTS"
 
-# 检查远程服务是否运行
-check_remote_service() {
-    local host=$1
-    local service=$2
-    local pid_file=$3
-    
-    local result=$(ssh $host "if [ -f $pid_file ] && ps -p \$(cat $pid_file) > /dev/null 2>&1; then echo 'running'; else echo 'stopped'; fi")
-    echo $result
-}
+# 日志配置
+export LOG_DIR="$MODULE_BASE/logs"
+mkdir -p $LOG_DIR
 
-# 分发文件到集群
-distribute_file() {
-    local src_file=$1
-    local dest_dir=$2
-    
+# 创建必要的目录
+create_directories() {
     for host in "${CLUSTER_HOSTS[@]}"; do
-        scp -r $src_file $host:$dest_dir/
-        if [ $? -eq 0 ]; then
-            print_info "文件已分发到 $host:$dest_dir"
-        else
-            print_error "文件分发到 $host 失败"
-        fi
+        $SSH_CMD $host "mkdir -p $ZK_DATA_DIR $ZK_LOG_DIR $KAFKA_LOG_DIR $FLUME_LOG_DIR $LOG_DIR"
+        $SSH_CMD $host "mkdir -p ${HDFS_NAME_DIR[@]} ${HDFS_DATA_DIR[@]} ${HDFS_CHECKPOINT_DIR[@]} ${YARN_NODEMANAGER_DIR[@]}"
     done
 }
