@@ -113,7 +113,7 @@ extract_component() {
         print_success "$component 解压成功"
         
         # 获取实际解压后的目录名（用于创建符号链接）
-        local actual_dir=$(run_on_host $MASTER_NODE "ls -d $target_dir/*/ 2>/dev/null | head -1 | sed 's|/$||'")
+        local actual_dir=$(ssh $MASTER_NODE "ls -d $target_dir/*/ 2>/dev/null | head -1 | sed 's|/$||'")
         if [ -n "$actual_dir" ]; then
             echo "$actual_dir"
         else
@@ -200,14 +200,14 @@ setup_java() {
     print_step "设置Java环境"
     
     # 查找Java安装
-    local java_dirs=$(run_on_host $MASTER_NODE "ls -d $MODULE_BASE/jdk* 2>/dev/null")
+    local java_dirs=$(ssh $MASTER_NODE "ls -d $MODULE_BASE/jdk* 2>/dev/null")
     if [ -z "$java_dirs" ]; then
         print_error "未找到Java安装"
         return 1
     fi
     
     local java_home=$(echo "$java_dirs" | head -1)
-    
+    echo "Java Home: $java_home"
     # 更新环境变量
     local bashrc_content="
 # Java环境变量
@@ -221,7 +221,7 @@ export PATH=\$JAVA_HOME/bin:\$PATH
         echo "$bashrc_content" | run_on_host $host "cat >> ~/.bashrc"
         
         # 验证Java安装
-        local java_version=$(run_on_host $host "source ~/.bashrc && java -version 2>&1 | head -1")
+        local java_version=$(ssh $host "source ~/.bashrc && java -version 2>&1 | head -1")
         if [[ $java_version == *"version"* ]]; then
             print_success "$host: Java $java_version"
         else
@@ -239,7 +239,7 @@ export PATH=\$JAVA_HOME/bin:\$PATH
 setup_hadoop_config() {
     print_step "配置Hadoop"
     
-    local hadoop_home=$(run_on_host $MASTER_NODE "ls -d $MODULE_BASE/hadoop* 2>/dev/null | head -1")
+    local hadoop_home=$(ssh $MASTER_NODE "ls -d $MODULE_BASE/hadoop* 2>/dev/null | head -1")
     if [ -z "$hadoop_home" ]; then
         print_error "未找到Hadoop安装"
         return 1
@@ -389,7 +389,7 @@ EOF
 setup_zookeeper_config() {
     print_step "配置Zookeeper"
     
-    local zk_home=$(run_on_host $MASTER_NODE "ls -d $MODULE_BASE/zookeeper* 2>/dev/null | head -1")
+    local zk_home=$(ssh $MASTER_NODE "ls -d $MODULE_BASE/zookeeper* 2>/dev/null | head -1")
     if [ -z "$zk_home" ]; then
         print_error "未找到Zookeeper安装"
         return 1
@@ -445,7 +445,7 @@ autopurge.purgeInterval=24
 setup_kafka_config() {
     print_step "配置Kafka"
     
-    local kafka_home=$(run_on_host $MASTER_NODE "ls -d $MODULE_BASE/kafka* 2>/dev/null | head -1")
+    local kafka_home=$(ssh $MASTER_NODE "ls -d $MODULE_BASE/kafka* 2>/dev/null | head -1")
     if [ -z "$kafka_home" ]; then
         print_error "未找到Kafka安装"
         return 1
@@ -501,7 +501,7 @@ auto.create.topics.enable=false
 setup_flume_config() {
     print_step "配置Flume"
     
-    local flume_home=$(run_on_host $MASTER_NODE "ls -d $MODULE_BASE/flume* 2>/dev/null | head -1")
+    local flume_home=$(ssh $MASTER_NODE "ls -d $MODULE_BASE/flume* 2>/dev/null | head -1")
     if [ -z "$flume_home" ]; then
         print_warning "未找到Flume安装，跳过配置"
         return 0
@@ -551,11 +551,11 @@ setup_environment_variables() {
     print_step "设置环境变量"
     
     # 获取实际安装路径
-    local java_home=$(run_on_host $MASTER_NODE "ls -d $MODULE_BASE/jdk* 2>/dev/null | head -1")
-    local hadoop_home=$(run_on_host $MASTER_NODE "ls -d $MODULE_BASE/hadoop* 2>/dev/null | head -1")
-    local zk_home=$(run_on_host $MASTER_NODE "ls -d $MODULE_BASE/zookeeper* 2>/dev/null | head -1")
-    local kafka_home=$(run_on_host $MASTER_NODE "ls -d $MODULE_BASE/kafka* 2>/dev/null | head -1")
-    local flume_home=$(run_on_host $MASTER_NODE "ls -d $MODULE_BASE/flume* 2>/dev/null | head -1")
+    local java_home=$(ssh $MASTER_NODE "ls -d $MODULE_BASE/jdk* 2>/dev/null | head -1")
+    local hadoop_home=$(ssh $MASTER_NODE "ls -d $MODULE_BASE/hadoop* 2>/dev/null | head -1")
+    local zk_home=$(ssh $MASTER_NODE "ls -d $MODULE_BASE/zookeeper* 2>/dev/null | head -1")
+    local kafka_home=$(ssh $MASTER_NODE "ls -d $MODULE_BASE/kafka* 2>/dev/null | head -1")
+    local flume_home=$(ssh $MASTER_NODE "ls -d $MODULE_BASE/flume* 2>/dev/null | head -1")
     
     local bashrc_content="
 # ============================================
@@ -721,7 +721,7 @@ setup_hosts_file() {
         print_info "更新 $host /etc/hosts..."
         
         # 备份原有文件
-        run_on_host $host "cp /etc/hosts /etc/hosts.backup.\$(date +%Y%m%d)"
+        run_on_host $host "sudo cp /etc/hosts /etc/hosts.backup.\$(date +%Y%m%d)"
         
         # 移除旧条目
         run_on_host $host "sed -i '/${CLUSTER_HOSTS[0]}/,/^$/d' /etc/hosts"

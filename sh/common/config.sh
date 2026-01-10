@@ -15,11 +15,11 @@ export MODULE_BASE="/opt/module"
 export SCRIPTS_BASE="/opt/sh"
 
 # 软件版本配置
-export JDK_HOME="$MODULE_BASE/java"
-export HADOOP_HOME="$MODULE_BASE/hadoop"
-export ZOOKEEPER_HOME="$MODULE_BASE/zookeeper"
-export KAFKA_HOME="$MODULE_BASE/kafka"
-export FLUME_HOME="$MODULE_BASE/flume"
+export JDK_HOME="/opt/module/jdk1.8.0"
+export HADOOP_HOME="/opt/module/hadoop"
+export ZOOKEEPER_HOME="/opt/module/zookeeper"
+export KAFKA_HOME="/opt/module/kafka"
+export FLUME_HOME="/opt/module/flume"
 
 # Hadoop配置
 export HDFS_NAME_DIR=("$MODULE_BASE/hadoop/name")

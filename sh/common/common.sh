@@ -52,7 +52,7 @@ run_on_cluster() {
         else
             $SSH_CMD $host "$cmd"
             if [ $? -ne 0 ]; then
-                print_error "在 $host 上执行命令失败"
+                print_error "在 $host 上执行命令 $cmd 失败"
                 return 1
             fi
         fi
@@ -72,7 +72,7 @@ run_on_host() {
     else
         $SSH_CMD $host "$cmd"
         if [ $? -ne 0 ]; then
-            print_error "在 $host 上执行命令失败"
+            print_error "在 $host 上执行命令 $cmd 失败"
             return 1
         fi
     fi
