@@ -83,16 +83,6 @@ EOF
         rm -rf /var/cache/dnf/*
         dnf install -y vim nc git wget curl net-tools openssh-clients sshpass
 
-        # ---------- Java ----------
-        dnf install -y java-1.8.0-openjdk java-1.8.0-openjdk-devel
-
-        JAVA_BIN=$(readlink -f $(which java))
-        JAVA_HOME=$(dirname $(dirname $JAVA_BIN))
-        cat > /etc/profile.d/java.sh <<EOF
-export JAVA_HOME=$JAVA_HOME
-export PATH=\\$JAVA_HOME/bin:\\$PATH
-EOF
-        chmod +x /etc/profile.d/java.sh
 
         # ---------- 防火墙 / SELinux ----------
         systemctl disable --now firewalld || true

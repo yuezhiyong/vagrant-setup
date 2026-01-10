@@ -26,7 +26,7 @@ source $SCRIPTS_BASE/common/common.sh
 declare -A COMPONENTS=(
     ["jdk"]="jdk-8u*linux-x64.tar.gz"
     ["hadoop"]="hadoop-3.*.tar.gz"
-    ["zookeeper"]="zookeeper-3.*.tar.gz"
+    ["zookeeper"]="apache-zookeeper-3.*.tar.gz"
     ["kafka"]="kafka_2.*.tgz"
     ["flume"]="apache-flume-1.*-bin.tar.gz"
 )
@@ -67,11 +67,12 @@ check_vagrant_files() {
     local found_components=0
     for component in "${!COMPONENTS[@]}"; do
         local pattern="${COMPONENTS[$component]}"
-        local files=$(ls $vagrant_dir/$pattern 2>/dev/null)
+        echo -e "  $component: $pattern"
+        local files=$(find $vagrant_dir -type f -name "$pattern" 2>/dev/null)
         
         if [ -n "$files" ]; then
             local file=$(echo "$files" | head -1)
-            print_success "$component: $(basename $file)"
+            print_success "$component: $(basename $file) ($(dirname $file))"
             found_components=$((found_components + 1))
         else
             print_warning "$component: 未找到匹配 $pattern 的文件"
@@ -132,7 +133,7 @@ install_component() {
     print_info "安装 $component ..."
     
     # 查找文件
-    local tar_file=$(ls /vagrant/$pattern 2>/dev/null | head -1)
+    local tar_file=$(find /vagrant -type f -name "$pattern" 2>/dev/null | head -1)
     if [ -z "$tar_file" ]; then
         print_warning "未找到 $component 的安装文件，跳过安装"
         return 0
@@ -740,19 +741,29 @@ create_directories_structure() {
         print_info "在 $host 创建目录..."
         
         # 软件目录
-        run_on_host $host "mkdir -p $MODULE_BASE"
+        run_on_host $host "sudo mkdir -p $MODULE_BASE"
+        
+        # 设置目录权限给vagrant用户
+        run_on_host $host "sudo chown vagrant:vagrant $MODULE_BASE"
         
         # 数据目录
-        run_on_host $host "mkdir -p $ZK_DATA_DIR $ZK_LOG_DIR"
-        run_on_host $host "mkdir -p $KAFKA_LOG_DIR $FLUME_LOG_DIR"
-        run_on_host $host "mkdir -p $LOG_DIR"
+        run_on_host $host "sudo mkdir -p $ZK_DATA_DIR $ZK_LOG_DIR"
+        run_on_host $host "sudo mkdir -p $KAFKA_LOG_DIR $FLUME_LOG_DIR"
+        run_on_host $host "sudo mkdir -p $LOG_DIR"
+        
+        # 设置数据目录权限
+        run_on_host $host "sudo chown -R vagrant:vagrant $(dirname $ZK_DATA_DIR) $(dirname $KAFKA_LOG_DIR) $(dirname $FLUME_LOG_DIR) $LOG_DIR 2>/dev/null || true"
         
         # Hadoop目录
-        run_on_host $host "mkdir -p ${HDFS_NAME_DIR[@]} ${HDFS_DATA_DIR[@]} ${HDFS_CHECKPOINT_DIR[@]} ${YARN_NODEMANAGER_DIR[@]}"
-        run_on_host $host "mkdir -p $MODULE_BASE/hadoop/{tmp,logs}"
+        run_on_host $host "sudo mkdir -p ${HDFS_NAME_DIR[@]} ${HDFS_DATA_DIR[@]} ${HDFS_CHECKPOINT_DIR[@]} ${YARN_NODEMANAGER_DIR[@]}"
+        run_on_host $host "sudo mkdir -p $MODULE_BASE/hadoop/{tmp,logs}"
+        
+        # 设置Hadoop目录权限
+        run_on_host $host "sudo chown -R vagrant:vagrant $(dirname ${HDFS_NAME_DIR[0]}) $MODULE_BASE/hadoop 2>/dev/null || true"
         
         # 脚本目录
-        run_on_host $host "mkdir -p $SCRIPTS_BASE"
+        run_on_host $host "sudo mkdir -p $SCRIPTS_BASE"
+        run_on_host $host "sudo chown vagrant:vagrant $SCRIPTS_BASE 2>/dev/null || true"
         
         print_success "$host 目录创建完成"
     done
@@ -779,6 +790,13 @@ install_all_components() {
     if [ "$confirm" != "y" ]; then
         print_info "安装取消"
         exit 0
+    fi
+    
+    # 预检查：验证SSH连接
+    print_step "预检查SSH连接"
+    if ! check_all_ssh; then
+        print_error "SSH连接检查失败，请确保可以从 $(hostname) SSH连接到所有集群节点"
+        exit 1
     fi
     
     # 1. 创建目录结构
