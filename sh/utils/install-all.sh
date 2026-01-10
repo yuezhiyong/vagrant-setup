@@ -1,33 +1,677 @@
 #!/bin/bash
 
 # ============================================
-# 集群安装脚本
+# 大数据集群自动安装脚本
+# 自动从/vagrant/目录安装组件到/opt/module
 # ============================================
 
 source $SCRIPTS_BASE/common/common.sh
 
+# 组件配置
+declare -A COMPONENTS=(
+    ["jdk"]="jdk-8u*linux-x64.tar.gz"
+    ["hadoop"]="hadoop-3.*.tar.gz"
+    ["zookeeper"]="zookeeper-3.*.tar.gz"
+    ["kafka"]="kafka_2.*.tgz"
+    ["flume"]="apache-flume-1.*-bin.tar.gz"
+)
+
+# 期望的安装路径
+declare -A TARGET_PATHS=(
+    ["jdk"]="$MODULE_BASE/jdk1.8.0"
+    ["hadoop"]="$MODULE_BASE/hadoop-3"
+    ["zookeeper"]="$MODULE_BASE/zookeeper-3"
+    ["kafka"]="$MODULE_BASE/kafka_2"
+    ["flume"]="$MODULE_BASE/apache-flume-1"
+)
+
 print_install_banner() {
     echo -e "${CYAN}"
     echo "╔══════════════════════════════════════════════════════════╗"
-    echo "║                大数据集群安装脚本                        ║"
-    echo "║                版本 1.0.0                                ║"
+    echo "║            大数据集群自动安装脚本                        ║"
+    echo "║            版本 2.0.0 (Vagrant版)                       ║"
     echo "╚══════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
+    echo -e "源文件目录: ${YELLOW}/vagrant/${NC}"
+    echo -e "安装目录: ${YELLOW}$MODULE_BASE${NC}"
+    echo -e "集群节点: ${YELLOW}${CLUSTER_HOSTS[*]}${NC}"
+    print_divider
+}
+
+check_vagrant_files() {
+    print_step "检查Vagrant文件"
+    
+    local vagrant_dir="/vagrant"
+    if [ ! -d "$vagrant_dir" ]; then
+        print_error "未找到/vagrant/目录，请确保在Vagrant环境中运行"
+        return 1
+    fi
+    
+    print_info "扫描/vagrant/目录中的组件文件..."
+    
+    local found_components=0
+    for component in "${!COMPONENTS[@]}"; do
+        local pattern="${COMPONENTS[$component]}"
+        local files=$(ls $vagrant_dir/$pattern 2>/dev/null)
+        
+        if [ -n "$files" ]; then
+            local file=$(echo "$files" | head -1)
+            print_success "$component: $(basename $file)"
+            found_components=$((found_components + 1))
+        else
+            print_warning "$component: 未找到匹配 $pattern 的文件"
+        fi
+    done
+    
+    if [ $found_components -eq 0 ]; then
+        print_error "未找到任何组件文件，请将tar文件放入/vagrant/目录"
+        return 1
+    fi
+    
+    print_success "找到 $found_components 个组件文件"
+    return 0
+}
+
+extract_component() {
+    local component=$1
+    local tar_file=$2
+    local target_dir=$3
+    
+    print_info "解压 $component: $(basename $tar_file) -> $target_dir"
+    
+    # 创建目标目录
+    run_on_cluster "mkdir -p $target_dir"
+    
+    # 解压文件
+    if [[ "$tar_file" == *.tar.gz ]] || [[ "$tar_file" == *.tgz ]]; then
+        run_on_cluster "tar -xzf $tar_file -C $target_dir --strip-components=1"
+    elif [[ "$tar_file" == *.zip ]]; then
+        run_on_cluster "unzip -q $tar_file -d $target_dir"
+    else
+        print_error "不支持的文件格式: $tar_file"
+        return 1
+    fi
+    
+    # 检查解压是否成功
+    if run_on_host $MASTER_NODE "[ -d \"$target_dir/bin\" ] || [ -d \"$target_dir/sbin\" ] || [ -d \"$target_dir/lib\" ]"; then
+        print_success "$component 解压成功"
+        
+        # 获取实际解压后的目录名（用于创建符号链接）
+        local actual_dir=$(run_on_host $MASTER_NODE "ls -d $target_dir/*/ 2>/dev/null | head -1 | sed 's|/$||'")
+        if [ -n "$actual_dir" ]; then
+            echo "$actual_dir"
+        else
+            echo "$target_dir"
+        fi
+    else
+        print_error "$component 解压失败或目录结构不正确"
+        return 1
+    fi
+}
+
+install_component() {
+    local component=$1
+    local pattern="${COMPONENTS[$component]}"
+    local target_path="${TARGET_PATHS[$component]}"
+    
+    print_info "安装 $component ..."
+    
+    # 查找文件
+    local tar_file=$(ls /vagrant/$pattern 2>/dev/null | head -1)
+    if [ -z "$tar_file" ]; then
+        print_warning "未找到 $component 的安装文件，跳过安装"
+        return 0
+    fi
+    
+    # 检查是否已安装
+    if run_on_host $MASTER_NODE "[ -d \"$target_path\" ] && [ \"\$(ls -A $target_path)\" ]"; then
+        print_info "$component 已安装，跳过"
+        return 0
+    fi
+    
+    # 分发tar文件到所有节点
+    print_info "分发 $component 文件到集群..."
+    distribute_file "$tar_file" "/tmp"
+    local remote_tar="/tmp/$(basename $tar_file)"
+    
+    # 在所有节点解压
+    local actual_dir=""
+    for host in "${CLUSTER_HOSTS[@]}"; do
+        print_info "在 $host 上安装 $component..."
+        local result=$(run_on_host $host "
+            # 清理旧目录
+            rm -rf $target_path
+            
+            # 解压文件
+            mkdir -p $target_path
+            if [[ \"$remote_tar\" == *.tar.gz ]] || [[ \"$remote_tar\" == *.tgz ]]; then
+                tar -xzf \"$remote_tar\" -C \"$target_path\" --strip-components=1
+            elif [[ \"$remote_tar\" == *.zip ]]; then
+                unzip -q \"$remote_tar\" -d \"$target_path\"
+            fi
+            
+            # 获取实际目录名
+            ls -d $target_path/*/ 2>/dev/null | head -1 | sed 's|/$||'
+        ")
+        
+        if [ -n "$result" ] && [ "$result" != "$target_path" ]; then
+            actual_dir="$result"
+        fi
+        
+        # 检查安装是否成功
+        if run_on_host $host "[ -d \"$target_path\" ] && [ \"\$(ls -A $target_path)\" ]"; then
+            print_success "$host: $component 安装成功"
+        else
+            print_error "$host: $component 安装失败"
+            return 1
+        fi
+    done
+    
+    # 清理临时文件
+    run_on_cluster "rm -f $remote_tar"
+    
+    # 如果解压后有多级目录，创建符号链接
+    if [ -n "$actual_dir" ] && [ "$actual_dir" != "$target_path" ]; then
+        print_info "创建符号链接: $actual_dir -> $target_path"
+        run_on_cluster "ln -sfn \"$actual_dir\" \"$target_path\""
+    fi
+    
+    print_success "$component 安装完成"
+    return 0
+}
+
+setup_java() {
+    print_step "设置Java环境"
+    
+    # 查找Java安装
+    local java_dirs=$(run_on_host $MASTER_NODE "ls -d $MODULE_BASE/jdk* 2>/dev/null")
+    if [ -z "$java_dirs" ]; then
+        print_error "未找到Java安装"
+        return 1
+    fi
+    
+    local java_home=$(echo "$java_dirs" | head -1)
+    
+    # 更新环境变量
+    local bashrc_content="
+# Java环境变量
+export JAVA_HOME=$java_home
+export PATH=\$JAVA_HOME/bin:\$PATH
+"
+    
+    # 设置所有节点的Java环境变量
+    for host in "${CLUSTER_HOSTS[@]}"; do
+        print_info "设置 $host Java环境变量..."
+        echo "$bashrc_content" | run_on_host $host "cat >> ~/.bashrc"
+        
+        # 验证Java安装
+        local java_version=$(run_on_host $host "source ~/.bashrc && java -version 2>&1 | head -1")
+        if [[ $java_version == *"version"* ]]; then
+            print_success "$host: Java $java_version"
+        else
+            print_error "$host: Java验证失败"
+            return 1
+        fi
+    done
+    
+    # 更新配置中的JAVA_HOME
+    export JDK_HOME="$java_home"
+    
+    return 0
+}
+
+setup_hadoop_config() {
+    print_step "配置Hadoop"
+    
+    local hadoop_home=$(run_on_host $MASTER_NODE "ls -d $MODULE_BASE/hadoop* 2>/dev/null | head -1")
+    if [ -z "$hadoop_home" ]; then
+        print_error "未找到Hadoop安装"
+        return 1
+    fi
+    
+    export HADOOP_HOME="$hadoop_home"
+    
+    # 创建必要的配置文件
+    local hadoop_conf_dir="$HADOOP_HOME/etc/hadoop"
+    
+    # 创建core-site.xml
+    cat > /tmp/core-site.xml << EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+<configuration>
+    <property>
+        <name>fs.defaultFS</name>
+        <value>hdfs://${MASTER_NODE}:9000</value>
+    </property>
+    <property>
+        <name>hadoop.tmp.dir</name>
+        <value>$MODULE_BASE/hadoop/tmp</value>
+    </property>
+    <property>
+        <name>hadoop.proxyuser.root.hosts</name>
+        <value>*</value>
+    </property>
+    <property>
+        <name>hadoop.proxyuser.root.groups</name>
+        <value>*</value>
+    </property>
+</configuration>
+EOF
+
+    # 创建hdfs-site.xml
+    cat > /tmp/hdfs-site.xml << EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+<configuration>
+    <property>
+        <name>dfs.replication</name>
+        <value>3</value>
+    </property>
+    <property>
+        <name>dfs.namenode.name.dir</name>
+        <value>file://${HDFS_NAME_DIR[0]}</value>
+    </property>
+    <property>
+        <name>dfs.datanode.data.dir</name>
+        <value>file://${HDFS_DATA_DIR[0]}</value>
+    </property>
+    <property>
+        <name>dfs.namenode.checkpoint.dir</name>
+        <value>file://${HDFS_CHECKPOINT_DIR[0]}</value>
+    </property>
+    <property>
+        <name>dfs.permissions.enabled</name>
+        <value>false</value>
+    </property>
+</configuration>
+EOF
+
+    # 创建yarn-site.xml
+    cat > /tmp/yarn-site.xml << EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+<configuration>
+    <property>
+        <name>yarn.resourcemanager.hostname</name>
+        <value>${MASTER_NODE}</value>
+    </property>
+    <property>
+        <name>yarn.nodemanager.aux-services</name>
+        <value>mapreduce_shuffle</value>
+    </property>
+    <property>
+        <name>yarn.nodemanager.aux-services.mapreduce_shuffle.class</name>
+        <value>org.apache.hadoop.mapred.ShuffleHandler</value>
+    </property>
+    <property>
+        <name>yarn.nodemanager.local-dirs</name>
+        <value>${YARN_NODEMANAGER_DIR[0]}</value>
+    </property>
+    <property>
+        <name>yarn.nodemanager.log-dirs</name>
+        <value>$MODULE_BASE/hadoop/logs/userlogs</value>
+    </property>
+    <property>
+        <name>yarn.log-aggregation-enable</name>
+        <value>true</value>
+    </property>
+</configuration>
+EOF
+
+    # 创建mapred-site.xml
+    cat > /tmp/mapred-site.xml << EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+<configuration>
+    <property>
+        <name>mapreduce.framework.name</name>
+        <value>yarn</value>
+    </property>
+    <property>
+        <name>yarn.app.mapreduce.am.env</name>
+        <value>HADOOP_MAPRED_HOME=$HADOOP_HOME</value>
+    </property>
+    <property>
+        <name>mapreduce.map.env</name>
+        <value>HADOOP_MAPRED_HOME=$HADOOP_HOME</value>
+    </property>
+    <property>
+        <name>mapreduce.reduce.env</name>
+        <value>HADOOP_MAPRED_HOME=$HADOOP_HOME</value>
+    </property>
+    <property>
+        <name>mapreduce.application.classpath</name>
+        <value>\$HADOOP_HOME/share/hadoop/mapreduce/*:\$HADOOP_HOME/share/hadoop/mapreduce/lib/*</value>
+    </property>
+</configuration>
+EOF
+
+    # 创建workers文件
+    printf "%s\n" "${CLUSTER_HOSTS[@]}" > /tmp/workers
+    
+    # 分发配置文件到集群
+    print_info "分发Hadoop配置文件..."
+    for host in "${CLUSTER_HOSTS[@]}"; do
+        run_on_host $host "mkdir -p $hadoop_conf_dir"
+        
+        for config_file in core-site.xml hdfs-site.xml yarn-site.xml mapred-site.xml workers; do
+            $SCP_CMD /tmp/$config_file $host:$hadoop_conf_dir/
+        done
+        
+        # 复制模板文件
+        run_on_host $host "cp $hadoop_conf_dir/mapred-site.xml.template $hadoop_conf_dir/mapred-site.xml 2>/dev/null || true"
+        
+        print_success "$host: Hadoop配置完成"
+    done
+    
+    # 清理临时文件
+    rm -f /tmp/*.xml /tmp/workers
+    
+    return 0
+}
+
+setup_zookeeper_config() {
+    print_step "配置Zookeeper"
+    
+    local zk_home=$(run_on_host $MASTER_NODE "ls -d $MODULE_BASE/zookeeper* 2>/dev/null | head -1")
+    if [ -z "$zk_home" ]; then
+        print_error "未找到Zookeeper安装"
+        return 1
+    fi
+    
+    export ZOOKEEPER_HOME="$zk_home"
+    
+    # 创建zoo.cfg配置文件
+    local zoo_cfg="
+# Zookeeper配置
+tickTime=2000
+initLimit=10
+syncLimit=5
+dataDir=$ZK_DATA_DIR
+dataLogDir=$ZK_LOG_DIR
+clientPort=2181
+maxClientCnxns=0
+admin.enableServer=false
+autopurge.snapRetainCount=3
+autopurge.purgeInterval=24
+4lw.commands.whitelist=*
+"
+    
+    # 添加集群配置
+    local id=1
+    for host in "${CLUSTER_HOSTS[@]}"; do
+        zoo_cfg+="server.$id=$host:2888:3888"$'\n'
+        id=$((id + 1))
+    done
+    
+    # 分发配置到所有节点
+    print_info "分发Zookeeper配置文件..."
+    for host in "${CLUSTER_HOSTS[@]}"; do
+        # 创建数据目录
+        run_on_host $host "mkdir -p $ZK_DATA_DIR $ZK_LOG_DIR"
+        
+        # 设置myid
+        run_on_host $host "echo $id > $ZK_DATA_DIR/myid"
+        
+        # 写入配置文件
+        echo "$zoo_cfg" | run_on_host $host "cat > $ZOOKEEPER_HOME/conf/zoo.cfg"
+        
+        # 复制模板
+        run_on_host $host "cp $ZOOKEEPER_HOME/conf/zoo_sample.cfg $ZOOKEEPER_HOME/conf/zoo.cfg 2>/dev/null || true"
+        
+        print_success "$host: Zookeeper配置完成 (myid=$id)"
+        id=$((id % 3 + 1))
+    done
+    
+    return 0
+}
+
+setup_kafka_config() {
+    print_step "配置Kafka"
+    
+    local kafka_home=$(run_on_host $MASTER_NODE "ls -d $MODULE_BASE/kafka* 2>/dev/null | head -1")
+    if [ -z "$kafka_home" ]; then
+        print_error "未找到Kafka安装"
+        return 1
+    fi
+    
+    export KAFKA_HOME="$kafka_home"
+    
+    # 为每个节点生成配置文件
+    local broker_id=1
+    for host in "${CLUSTER_HOSTS[@]}"; do
+        local kafka_conf="
+# Kafka Broker配置 - $host
+broker.id=$broker_id
+listeners=PLAINTEXT://$host:9092
+advertised.listeners=PLAINTEXT://$host:9092
+num.network.threads=3
+num.io.threads=8
+socket.send.buffer.bytes=102400
+socket.receive.buffer.bytes=102400
+socket.request.max.bytes=104857600
+
+# 日志配置
+log.dirs=$KAFKA_LOG_DIR
+num.partitions=3
+num.recovery.threads.per.data.dir=1
+log.retention.hours=168
+log.segment.bytes=1073741824
+log.retention.check.interval.ms=300000
+
+# Zookeeper配置
+zookeeper.connect=$(printf "%s:2181," "${CLUSTER_HOSTS[@]}" | sed 's/,$//')
+zookeeper.connection.timeout.ms=18000
+
+# 副本配置
+default.replication.factor=3
+min.insync.replicas=2
+
+# 其他配置
+delete.topic.enable=true
+auto.create.topics.enable=false
+"
+        
+        # 写入配置文件
+        echo "$kafka_conf" | run_on_host $host "cat > $KAFKA_HOME/config/server.properties"
+        print_success "$host: Kafka配置完成 (broker.id=$broker_id)"
+        
+        broker_id=$((broker_id + 1))
+    done
+    
+    return 0
+}
+
+setup_flume_config() {
+    print_step "配置Flume"
+    
+    local flume_home=$(run_on_host $MASTER_NODE "ls -d $MODULE_BASE/flume* 2>/dev/null | head -1")
+    if [ -z "$flume_home" ]; then
+        print_warning "未找到Flume安装，跳过配置"
+        return 0
+    fi
+    
+    export FLUME_HOME="$flume_home"
+    
+    # 创建Flume配置文件目录
+    run_on_cluster "mkdir -p $FLUME_CONF_DIR"
+    
+    # 创建示例配置文件
+    cat > /tmp/flume-kafka.conf << EOF
+# Flume Kafka Sink配置示例
+agent.sources = tail-source
+agent.channels = mem-channel
+agent.sinks = kafka-sink
+
+# Source配置 - 监控日志文件
+agent.sources.tail-source.type = TAILDIR
+agent.sources.tail-source.channels = mem-channel
+agent.sources.tail-source.positionFile = $FLUME_LOG_DIR/taildir_position.json
+agent.sources.tail-source.filegroups = f1
+agent.sources.tail-source.filegroups.f1 = /var/log/.*\.log
+
+# Channel配置
+agent.channels.mem-channel.type = memory
+agent.channels.mem-channel.capacity = 10000
+agent.channels.mem-channel.transactionCapacity = 1000
+
+# Sink配置 - Kafka
+agent.sinks.kafka-sink.type = org.apache.flume.sink.kafka.KafkaSink
+agent.sinks.kafka-sink.channel = mem-channel
+agent.sinks.kafka-sink.kafka.bootstrap.servers = $(printf "%s:9092," "${CLUSTER_HOSTS[@]}" | sed 's/,$//')
+agent.sinks.kafka-sink.kafka.topic = flume-logs
+agent.sinks.kafka-sink.flumeBatchSize = 100
+EOF
+
+    # 分发配置文件
+    distribute_file "/tmp/flume-kafka.conf" "$FLUME_CONF_DIR"
+    rm -f /tmp/flume-kafka.conf
+    
+    print_success "Flume配置完成"
+    return 0
+}
+
+setup_environment_variables() {
+    print_step "设置环境变量"
+    
+    # 获取实际安装路径
+    local java_home=$(run_on_host $MASTER_NODE "ls -d $MODULE_BASE/jdk* 2>/dev/null | head -1")
+    local hadoop_home=$(run_on_host $MASTER_NODE "ls -d $MODULE_BASE/hadoop* 2>/dev/null | head -1")
+    local zk_home=$(run_on_host $MASTER_NODE "ls -d $MODULE_BASE/zookeeper* 2>/dev/null | head -1")
+    local kafka_home=$(run_on_host $MASTER_NODE "ls -d $MODULE_BASE/kafka* 2>/dev/null | head -1")
+    local flume_home=$(run_on_host $MASTER_NODE "ls -d $MODULE_BASE/flume* 2>/dev/null | head -1")
+    
+    local bashrc_content="
+# ============================================
+# 大数据集群环境变量
+# ============================================
+
+# Java环境
+export JAVA_HOME=${java_home:-$MODULE_BASE/jdk1.8.0}
+export PATH=\$JAVA_HOME/bin:\$PATH
+
+# Hadoop环境
+export HADOOP_HOME=${hadoop_home:-$MODULE_BASE/hadoop-3}
+export PATH=\$PATH:\$HADOOP_HOME/bin:\$HADOOP_HOME/sbin
+
+# Zookeeper环境
+export ZOOKEEPER_HOME=${zk_home:-$MODULE_BASE/zookeeper-3}
+export PATH=\$PATH:\$ZOOKEEPER_HOME/bin
+
+# Kafka环境
+export KAFKA_HOME=${kafka_home:-$MODULE_BASE/kafka_2}
+export PATH=\$PATH:\$KAFKA_HOME/bin
+
+# Flume环境
+export FLUME_HOME=${flume_home:-$MODULE_BASE/apache-flume-1}
+export PATH=\$PATH:\$FLUME_HOME/bin
+
+# Hadoop进程用户
+export HDFS_NAMENODE_USER=root
+export HDFS_DATANODE_USER=root
+export HDFS_SECONDARYNAMENODE_USER=root
+export YARN_RESOURCEMANAGER_USER=root
+export YARN_NODEMANAGER_USER=root
+
+# 常用别名
+alias hstart='$SCRIPTS_BASE/hadoop/hadoop-start.sh start'
+alias hstop='$SCRIPTS_BASE/hadoop/hadoop-start.sh stop'
+alias kstart='$SCRIPTS_BASE/kafka/kafka-manager.sh start'
+alias kstop='$SCRIPTS_BASE/kafka/kafka-manager.sh stop'
+alias zstart='$SCRIPTS_BASE/kafka/zk-start.sh start'
+alias zstop='$SCRIPTS_BASE/kafka/zk-start.sh stop'
+alias fstart='$SCRIPTS_BASE/flume/flume-manager.sh start'
+alias fstop='$SCRIPTS_BASE/flume/flume-manager.sh stop'
+alias cstart='$SCRIPTS_BASE/cluster/start-all.sh'
+alias cstop='$SCRIPTS_BASE/cluster/stop-all.sh'
+alias cstatus='$SCRIPTS_BASE/cluster/status-all.sh'
+"
+    
+    # 设置所有节点的环境变量
+    for host in "${CLUSTER_HOSTS[@]}"; do
+        print_info "设置 $host 环境变量..."
+        
+        # 备份原有的.bashrc
+        run_on_host $host "cp ~/.bashrc ~/.bashrc.backup.\$(date +%Y%m%d) 2>/dev/null || true"
+        
+        # 移除旧的环境变量设置
+        run_on_host $host "sed -i '/大数据集群环境变量/,/============================================/d' ~/.bashrc"
+        
+        # 添加新的环境变量
+        echo "$bashrc_content" | run_on_host $host "cat >> ~/.bashrc"
+        
+        # 立即生效
+        run_on_host $host "source ~/.bashrc"
+        
+        print_success "$host: 环境变量设置完成"
+    done
+    
+    # 更新当前脚本的环境变量
+    export JDK_HOME="${java_home:-$MODULE_BASE/jdk1.8.0}"
+    export HADOOP_HOME="${hadoop_home:-$MODULE_BASE/hadoop-3}"
+    export ZOOKEEPER_HOME="${zk_home:-$MODULE_BASE/zookeeper-3}"
+    export KAFKA_HOME="${kafka_home:-$MODULE_BASE/kafka_2}"
+    export FLUME_HOME="${flume_home:-$MODULE_BASE/apache-flume-1}"
+    
+    # 更新配置文件
+    update_config_file
+    
+    return 0
+}
+
+update_config_file() {
+    print_info "更新配置文件..."
+    
+    # 更新config.sh中的路径
+    local config_file="$SCRIPTS_BASE/common/config.sh"
+    
+    if [ -f "$config_file" ]; then
+        # 备份原配置
+        cp "$config_file" "$config_file.backup.$(date +%Y%m%d)"
+        
+        # 更新路径变量
+        sed -i "s|export JDK_HOME=.*|export JDK_HOME=\"$JDK_HOME\"|" "$config_file"
+        sed -i "s|export HADOOP_HOME=.*|export HADOOP_HOME=\"$HADOOP_HOME\"|" "$config_file"
+        sed -i "s|export ZOOKEEPER_HOME=.*|export ZOOKEEPER_HOME=\"$ZOOKEEPER_HOME\"|" "$config_file"
+        sed -i "s|export KAFKA_HOME=.*|export KAFKA_HOME=\"$KAFKA_HOME\"|" "$config_file"
+        sed -i "s|export FLUME_HOME=.*|export FLUME_HOME=\"$FLUME_HOME\"|" "$config_file"
+        
+        print_success "配置文件更新完成"
+    fi
 }
 
 setup_ssh_keys() {
     print_step "设置SSH免密登录"
     
-    # 生成密钥（如果不存在）
-    if [ ! -f ~/.ssh/id_rsa ]; then
-        print_info "生成SSH密钥..."
-        ssh-keygen -t rsa -P '' -f ~/.ssh/id_rsa
-    fi
-    
-    # 分发公钥到所有节点
     for host in "${CLUSTER_HOSTS[@]}"; do
         print_info "设置 $host SSH免密登录..."
-        ssh-copy-id -i ~/.ssh/id_rsa.pub $host
+        
+        # 生成密钥（如果不存在）
+        run_on_host $host "
+            if [ ! -f ~/.ssh/id_rsa ]; then
+                ssh-keygen -t rsa -P '' -f ~/.ssh/id_rsa
+            fi
+        "
+        
+        # 收集所有节点的公钥
+        local all_pub_keys=""
+        for h in "${CLUSTER_HOSTS[@]}"; do
+            local pub_key=$(run_on_host $h "cat ~/.ssh/id_rsa.pub 2>/dev/null")
+            all_pub_keys+="$pub_key"$'\n'
+        done
+        
+        # 分发到每个节点
+        echo "$all_pub_keys" | run_on_host $host "
+            mkdir -p ~/.ssh
+            chmod 700 ~/.ssh
+            echo '$all_pub_keys' >> ~/.ssh/authorized_keys
+            chmod 600 ~/.ssh/authorized_keys
+            # 禁用严格主机检查
+            echo 'Host *' > ~/.ssh/config
+            echo '    StrictHostKeyChecking no' >> ~/.ssh/config
+            echo '    UserKnownHostsFile /dev/null' >> ~/.ssh/config
+            chmod 600 ~/.ssh/config
+        "
         
         # 测试SSH连接
         if check_ssh_connection $host; then
@@ -37,55 +681,40 @@ setup_ssh_keys() {
             return 1
         fi
     done
+    
+    return 0
 }
 
-setup_hosts() {
+setup_hosts_file() {
     print_step "设置/etc/hosts文件"
     
-    local hosts_content="
-# 大数据集群
-192.168.100.101 centos-101
-192.168.100.102 centos-102
-192.168.100.103 centos-103
-"
+    # 收集所有节点的IP地址
+    local hosts_content=""
+    for host in "${CLUSTER_HOSTS[@]}"; do
+        local ip=$(get_host_ip $host)
+        if [ -n "$ip" ]; then
+            hosts_content+="$ip $host"$'\n'
+        else
+            # 如果无法获取IP，使用本地解析
+            hosts_content+="127.0.0.1 $host"$'\n'
+        fi
+    done
     
     # 更新所有节点的hosts文件
     for host in "${CLUSTER_HOSTS[@]}"; do
-        # 备份原有hosts文件
-        run_on_host $host "cp /etc/hosts /etc/hosts.backup.$(date +%Y%m%d)"
+        print_info "更新 $host /etc/hosts..."
         
-        # 添加集群主机名
+        # 备份原有文件
+        run_on_host $host "cp /etc/hosts /etc/hosts.backup.\$(date +%Y%m%d)"
+        
+        # 移除旧条目
+        run_on_host $host "sed -i '/${CLUSTER_HOSTS[0]}/,/^$/d' /etc/hosts"
+        
+        # 添加新条目
+        echo "# 大数据集群节点" | run_on_host $host "cat >> /etc/hosts"
         echo "$hosts_content" | run_on_host $host "cat >> /etc/hosts"
         
         print_success "$host hosts文件更新完成"
-    done
-}
-
-setup_environment() {
-    print_step "设置环境变量"
-    
-    local bashrc_content="
-# 大数据环境变量
-export JAVA_HOME=$JDK_HOME
-export HADOOP_HOME=$HADOOP_HOME
-export ZOOKEEPER_HOME=$ZOOKEEPER_HOME
-export KAFKA_HOME=$KAFKA_HOME
-export FLUME_HOME=$FLUME_HOME
-export PATH=\$PATH:\$JAVA_HOME/bin:\$HADOOP_HOME/bin:\$HADOOP_HOME/sbin:\$ZOOKEEPER_HOME/bin:\$KAFKA_HOME/bin:\$FLUME_HOME/bin
-
-# Hadoop配置
-export HDFS_NAMENODE_USER=root
-export HDFS_DATANODE_USER=root
-export HDFS_SECONDARYNAMENODE_USER=root
-export YARN_RESOURCEMANAGER_USER=root
-export YARN_NODEMANAGER_USER=root
-"
-    
-    # 设置所有节点的环境变量
-    for host in "${CLUSTER_HOSTS[@]}"; do
-        print_info "设置 $host 环境变量..."
-        echo "$bashrc_content" | run_on_host $host "cat >> ~/.bashrc"
-        run_on_host $host "source ~/.bashrc"
     done
 }
 
@@ -105,6 +734,7 @@ create_directories_structure() {
         
         # Hadoop目录
         run_on_host $host "mkdir -p ${HDFS_NAME_DIR[@]} ${HDFS_DATA_DIR[@]} ${HDFS_CHECKPOINT_DIR[@]} ${YARN_NODEMANAGER_DIR[@]}"
+        run_on_host $host "mkdir -p $MODULE_BASE/hadoop/{tmp,logs}"
         
         # 脚本目录
         run_on_host $host "mkdir -p $SCRIPTS_BASE"
@@ -113,47 +743,140 @@ create_directories_structure() {
     done
 }
 
-install_cluster() {
+install_all_components() {
     print_install_banner
     
-    print_warning "此脚本将设置大数据集群基础环境"
-    print_warning "请确保所有节点已安装: JDK, Hadoop, Zookeeper, Kafka, Flume"
-    read -p "继续安装？(y/n): " confirm
+    # 检查Vagrant文件
+    if ! check_vagrant_files; then
+        print_error "无法继续安装"
+        exit 1
+    fi
+    
+    print_warning "即将安装大数据集群到所有节点"
+    print_warning "这将会:"
+    echo "  1. 安装所有组件到 $MODULE_BASE"
+    echo "  2. 配置SSH免密登录"
+    echo "  3. 设置环境变量"
+    echo "  4. 配置所有组件"
+    echo ""
+    read -p "确认安装？(y/n): " confirm
     
     if [ "$confirm" != "y" ]; then
         print_info "安装取消"
         exit 0
     fi
     
-    # 1. 设置SSH免密登录
-    setup_ssh_keys || exit 1
-    
-    # 2. 设置hosts文件
-    setup_hosts
-    
-    # 3. 创建目录结构
+    # 1. 创建目录结构
     create_directories_structure
     
-    # 4. 设置环境变量
-    setup_environment
+    # 2. 设置SSH
+    setup_ssh_keys || {
+        print_error "SSH设置失败"
+        exit 1
+    }
     
-    # 5. 同步配置
-    $SCRIPTS_BASE/utils/sync-config.sh all
+    # 3. 设置hosts文件
+    setup_hosts_file
     
-    # 6. 检查环境
-    $SCRIPTS_BASE/utils/check-env.sh
+    # 4. 安装组件
+    print_step "安装组件"
+    
+    # 安装顺序很重要：Java -> Zookeeper -> Hadoop -> Kafka -> Flume
+    local components=("jdk" "zookeeper" "hadoop" "kafka" "flume")
+    
+    for component in "${components[@]}"; do
+        install_component $component || {
+            print_warning "$component 安装失败，继续安装其他组件..."
+        }
+        sleep 2
+    done
+    
+    # 5. 设置Java环境
+    setup_java || {
+        print_error "Java环境设置失败"
+        exit 1
+    }
+    
+    # 6. 配置各个组件
+    setup_hadoop_config || {
+        print_warning "Hadoop配置失败，可能需要手动配置"
+    }
+    
+    setup_zookeeper_config || {
+        print_warning "Zookeeper配置失败，可能需要手动配置"
+    }
+    
+    setup_kafka_config || {
+        print_warning "Kafka配置失败，可能需要手动配置"
+    }
+    
+    setup_flume_config || {
+        print_warning "Flume配置失败，可能需要手动配置"
+    }
+    
+    # 7. 设置环境变量
+    setup_environment_variables
+    
+    # 8. 分发脚本
+    print_step "分发管理脚本"
+    
+    # 同步脚本到所有节点
+    $SCRIPTS_BASE/utils/sync-config.sh scripts
     
     print_step "安装完成"
-    print_success "大数据集群基础环境设置完成！"
+    print_success "大数据集群安装完成！"
     
     echo ""
     echo -e "${GREEN}使用说明:${NC}"
     echo "1. 启动集群: $SCRIPTS_BASE/cluster/start-all.sh"
     echo "2. 停止集群: $SCRIPTS_BASE/cluster/stop-all.sh"
     echo "3. 查看状态: $SCRIPTS_BASE/cluster/status-all.sh"
-    echo "4. 重启集群: $SCRIPTS_BASE/cluster/restart-all.sh"
+    echo "4. 测试组件:"
+    echo "   - 测试Hadoop: hdfs dfs -ls /"
+    echo "   - 测试Kafka: $SCRIPTS_BASE/kafka/kafka-manager.sh create-topic test"
     echo ""
-    echo -e "${YELLOW}请确保所有软件已正确安装到 $MODULE_BASE 目录${NC}"
+    echo -e "${YELLOW}请重启终端或运行 'source ~/.bashrc' 使环境变量生效${NC}"
 }
 
-install_cluster
+# 安装模式选择
+case "$1" in
+    ""|"all")
+        install_all_components
+        ;;
+        
+    "check")
+        check_vagrant_files
+        ;;
+        
+    "components")
+        print_step "安装所有组件"
+        for component in jdk zookeeper hadoop kafka flume; do
+            install_component $component
+        done
+        ;;
+        
+    "config")
+        print_step "配置所有组件"
+        setup_java
+        setup_hadoop_config
+        setup_zookeeper_config
+        setup_kafka_config
+        setup_flume_config
+        setup_environment_variables
+        ;;
+        
+    "ssh")
+        setup_ssh_keys
+        ;;
+        
+    *)
+        echo "用法: $0 {all|check|components|config|ssh}"
+        echo ""
+        echo "安装模式:"
+        echo "  all         完整安装（推荐）"
+        echo "  check       检查Vagrant文件"
+        echo "  components  只安装组件"
+        echo "  config      只配置组件"
+        echo "  ssh         只设置SSH"
+        exit 1
+esac
