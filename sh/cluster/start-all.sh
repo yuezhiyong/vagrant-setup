@@ -4,6 +4,15 @@
 # 启动所有组件
 # ============================================
 
+SCRIPTS_BASE=$(cd "$(dirname "$0")/.." && pwd)
+# Temporarily set SCRIPTS_BASE for loading config files
+export SCRIPTS_BASE
+source $SCRIPTS_BASE/common/config.sh
+# Override SCRIPTS_BASE with the actual script location
+unset SCRIPTS_BASE
+SCRIPTS_BASE=$(cd "$(dirname "$0")/.." && pwd)
+export SCRIPTS_BASE
+source $SCRIPTS_BASE/common/color.sh
 source $SCRIPTS_BASE/common/common.sh
 
 print_banner() {
@@ -25,7 +34,7 @@ start_all_components() {
     
     # 2. 启动Zookeeper
     print_step "2. 启动Zookeeper集群"
-    $SCRIPTS_BASE/kafka/zk-start.sh start || {
+    $SCRIPTS_BASE/zookeeper/zk-manager.sh start || {
         print_error "Zookeeper启动失败"
         exit 1
     }
@@ -41,7 +50,7 @@ start_all_components() {
     
     # 4. 启动Hadoop
     print_step "4. 启动Hadoop集群"
-    $SCRIPTS_BASE/hadoop/hadoop-start.sh start || {
+    $SCRIPTS_BASE/hadoop/hadoop-manager.sh start || {
         print_error "Hadoop启动失败"
         exit 1
     }
@@ -73,7 +82,7 @@ case "$1" in
         
     "minimal")
         print_banner
-        $SCRIPTS_BASE/kafka/zk-start.sh start
+        $SCRIPTS_BASE/zookeeper/zk-manager.sh start
         sleep 3
         $SCRIPTS_BASE/kafka/kafka-manager.sh start
         ;;

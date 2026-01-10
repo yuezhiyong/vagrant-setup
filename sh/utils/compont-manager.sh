@@ -5,6 +5,18 @@
 # 用于单独管理组件的安装、卸载、状态检查
 # ============================================
 
+# Dynamically calculate SCRIPTS_BASE based on script location
+SCRIPTS_BASE=$(cd "$(dirname "$0")/.." && pwd)
+
+# Temporarily set SCRIPTS_BASE for loading config files
+export SCRIPTS_BASE
+source $SCRIPTS_BASE/common/config.sh
+
+# Override SCRIPTS_BASE with the actual script location
+unset SCRIPTS_BASE
+SCRIPTS_BASE=$(cd "$(dirname "$0")/.." && pwd)
+export SCRIPTS_BASE
+
 source $SCRIPTS_BASE/common/common.sh
 
 show_component_status() {

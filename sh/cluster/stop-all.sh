@@ -4,6 +4,15 @@
 # 停止所有组件
 # ============================================
 
+SCRIPTS_BASE=$(cd "$(dirname "$0")/.." && pwd)
+# Temporarily set SCRIPTS_BASE for loading config files
+export SCRIPTS_BASE
+source $SCRIPTS_BASE/common/config.sh
+# Override SCRIPTS_BASE with the actual script location
+unset SCRIPTS_BASE
+SCRIPTS_BASE=$(cd "$(dirname "$0")/.." && pwd)
+export SCRIPTS_BASE
+source $SCRIPTS_BASE/common/color.sh
 source $SCRIPTS_BASE/common/common.sh
 
 print_banner() {
@@ -32,7 +41,7 @@ stop_all_components() {
     
     # 3. 停止Zookeeper
     print_step "3. 停止Zookeeper集群"
-    $SCRIPTS_BASE/kafka/zk-start.sh stop || {
+    $SCRIPTS_BASE/zookeeper/zk-manager.sh stop || {
         print_warning "Zookeeper停止过程中出现错误，尝试强制停止"
         run_on_cluster "pkill -f 'QuorumPeerMain'" || true
     }
@@ -40,7 +49,7 @@ stop_all_components() {
     
     # 4. 停止Hadoop
     print_step "4. 停止Hadoop集群"
-    $SCRIPTS_BASE/hadoop/hadoop-start.sh stop || {
+    $SCRIPTS_BASE/hadoop/hadoop-manager.sh stop || {
         print_warning "Hadoop停止过程中出现错误，尝试强制停止"
         run_on_cluster "pkill -f 'NameNode\|DataNode\|ResourceManager\|NodeManager'" || true
     }

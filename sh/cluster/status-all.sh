@@ -4,6 +4,15 @@
 # 查看所有组件状态
 # ============================================
 
+SCRIPTS_BASE=$(cd "$(dirname "$0")/.." && pwd)
+# Temporarily set SCRIPTS_BASE for loading config files
+export SCRIPTS_BASE
+source $SCRIPTS_BASE/common/config.sh
+# Override SCRIPTS_BASE with the actual script location
+unset SCRIPTS_BASE
+SCRIPTS_BASE=$(cd "$(dirname "$0")/.." && pwd)
+export SCRIPTS_BASE
+source $SCRIPTS_BASE/common/color.sh
 source $SCRIPTS_BASE/common/common.sh
 
 print_banner() {
@@ -35,7 +44,7 @@ check_all_status() {
     
     # 2. Zookeeper状态
     print_step "Zookeeper集群状态"
-    $SCRIPTS_BASE/kafka/zk-start.sh status
+    $SCRIPTS_BASE/zookeeper/zk-manager.sh status
     
     print_divider
     
@@ -47,7 +56,7 @@ check_all_status() {
     
     # 4. Hadoop状态
     print_step "Hadoop集群状态"
-    $SCRIPTS_BASE/hadoop/hadoop-start.sh status
+    $SCRIPTS_BASE/hadoop/hadoop-manager.sh status
     
     print_divider
     
