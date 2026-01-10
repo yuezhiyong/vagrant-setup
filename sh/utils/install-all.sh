@@ -1,10 +1,25 @@
 #!/bin/bash
-
 # ============================================
 # 大数据集群自动安装脚本
 # 自动从/vagrant/目录安装组件到/opt/module
 # ============================================
 
+# 动态设置SCRIPTS_BASE变量（当前脚本所在目录的父目录）
+export SCRIPTS_BASE=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+
+# 设置其他路径变量
+export MODULE_BASE="/opt/module"
+
+# 保存原始的SCRIPTS_BASE值
+ORIG_SCRIPTS_BASE="$SCRIPTS_BASE"
+
+# 加载公共函数库（按依赖顺序）
+source $SCRIPTS_BASE/common/config.sh
+
+# 恢复原始的SCRIPTS_BASE值，以确保后续加载的脚本能找到正确位置
+export SCRIPTS_BASE="$ORIG_SCRIPTS_BASE"
+
+source $SCRIPTS_BASE/common/color.sh
 source $SCRIPTS_BASE/common/common.sh
 
 # 组件配置

@@ -4,9 +4,8 @@
 # 公共函数库
 # ============================================
 
-# 加载配置和颜色
-source $SCRIPTS_BASE/common/config.sh
-source $SCRIPTS_BASE/common/colors.sh
+# 加载颜色库
+source $SCRIPTS_BASE/common/color.sh
 
 # 检查命令是否存在
 check_command() {
