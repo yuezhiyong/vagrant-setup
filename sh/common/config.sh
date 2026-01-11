@@ -9,7 +9,7 @@ export CLUSTER_HOSTS=("centos-201" "centos-202" "centos-203")
 
 # 管理节点（运行控制脚本的节点）
 export MASTER_NODE="centos-201"
-
+export YARN_NODE="centos-202"
 # 软件安装路径
 export MODULE_BASE="/opt/module"
 export SCRIPTS_BASE="/home/vagrant/vagrant-setup/sh"

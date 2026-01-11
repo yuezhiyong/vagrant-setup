@@ -88,11 +88,53 @@ check_zookeeper_before_kafka() {
     return 0
 }
 
+is_kafka_broker_running() {
+    local host=$1
+
+    # ---------- 1. 端口监听（软判断） ----------
+    if ! run_on_host "$host" \
+        "ss -lnt sport = :9092 | grep -q LISTEN || true"; then
+        return 1
+    fi
+
+    # ---------- 2. 协议级判断（硬裁判） ----------
+    if ! run_on_host "$host" \
+        "cd $KAFKA_HOME && timeout 5s \
+         bin/kafka-broker-api-versions.sh \
+         --bootstrap-server $host:9092 \
+         >/dev/null 2>&1 || true"; then
+        return 2
+    fi
+
+    return 0
+}
+
+wait_for_kafka_ready() {
+    local host=$1
+    local retries=30
+
+    while ((retries-- > 0)); do
+        if is_kafka_broker_running "$host"; then
+            return 0
+        fi
+        sleep 2
+    done
+
+    return 1
+}
+
+
 start_kafka_node() {
     local host=$1
     
-    # 检查是否已运行
-    if run_on_host $host "pgrep -f 'kafka.Kafka' >/dev/null 2>&1"; then
+    # === 1. 已运行直接返回（允许失败）===
+    if run_on_host "$host" "
+        pgrep -f 'kafka.Kafka' >/dev/null 2>&1 &&
+        cd $KAFKA_HOME &&
+        timeout 10s bin/kafka-broker-api-versions.sh \
+            --bootstrap-server $host:9092 \
+            >/dev/null 2>&1
+    "; then
         print_info "$host Kafka已在运行"
         return 0
     fi
@@ -109,30 +151,23 @@ nohup bin/kafka-server-start.sh config/server.properties > $KAFKA_LOG_DIR/kafka-
 EOF
     
     # 等待启动
-    sleep 5
-    local count=0
-    local max_attempts=30
-    local started=0
-    
-    while [ $count -lt $max_attempts ]; do
-        if run_on_host $host "pgrep -f 'kafka.Kafka' >/dev/null 2>&1"; then
-            # 额外检查端口是否开放
-            if run_on_host $host "timeout 5 bash -c '</dev/tcp/localhost/9092' >/dev/null 2>&1"; then
-                started=1
-                break
-            fi
+    # === 3. 等待 Broker Ready（关键）===
+    local retries=30
+    while (( retries-- > 0 )); do
+        if run_on_host "$host" "
+            cd $KAFKA_HOME &&
+            timeout 10s bin/kafka-broker-api-versions.sh \
+                --bootstrap-server $host:9092 \
+                >/dev/null 2>&1
+        "; then
+            print_success "$host Kafka启动成功"
+            return 0
         fi
         sleep 2
-        ((count++))
     done
-    
-    if [ $started -eq 1 ]; then
-        print_success "$host Kafka启动成功"
-        return 0
-    else
-        print_error "$host Kafka启动失败"
-        return 1
-    fi
+
+    print_error "$host Kafka启动超时"
+    return 1
 }
 
 start_kafka_cluster() {
@@ -198,27 +233,37 @@ stop_kafka_cluster() {
 
 check_kafka_status() {
     print_step "Kafka集群状态"
-    
+
     for host in "${CLUSTER_HOSTS[@]}"; do
         print_info "检查 $host 状态..."
-        
-        if run_on_host $host "pgrep -f 'kafka.Kafka' >/dev/null 2>&1"; then
-            # 再做一次真正的 Broker 可用性检查
-            if run_on_host $host "cd $KAFKA_HOME && bin/kafka-broker-api-versions.sh --bootstrap-server $host:9092 >/dev/null 2>&1"; then
-                print_success "$host: 运行中 (健康)"
-            else
-                print_warning "$host: 进程存在，但 Broker 不可用"
-            fi
+
+        if is_kafka_broker_running "$host"; then
+            print_success "$host: Kafka Broker 运行中（健康）"
         else
-            print_error "$host: Kafka未运行"
+            local rc=$?
+            case $rc in
+                1)
+                    print_error "$host: Kafka未运行（9092端口未监听）"
+                    ;;
+                2)
+                    print_warning "$host: 端口存在，但 Broker 未就绪"
+                    ;;
+                *)
+                    print_error "$host: Kafka状态未知"
+                    ;;
+            esac
         fi
     done
-    
-    # 检查主题
+
+    # 主题检查（只在至少一个 Broker 正常时）
     if [ "$1" = "detail" ]; then
-        print_info "Kafka主题列表:"
         local first_host="${CLUSTER_HOSTS[0]}"
-        run_on_host $first_host "cd $KAFKA_HOME && bin/kafka-topics.sh --list --bootstrap-server $first_host:9092"
+        if is_kafka_broker_running "$first_host"; then
+            print_info "Kafka主题列表:"
+            run_on_host "$first_host" \
+              "cd $KAFKA_HOME && bin/kafka-topics.sh \
+               --list --bootstrap-server $first_host:9092"
+        fi
     fi
 }
 
