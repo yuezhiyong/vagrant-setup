@@ -1,11 +1,11 @@
-初始化安装
+# 1.如何使用
+1. 将vagrant-hadoop-cluster.Vagrantfile重新完整copy到一个单独的空文件夹下
+2. 使用vagrant up命令启动整个集群节点
+3. 修改该文件的node.vm.synced_folder ".", "/vagrant", disabled: true为node.vm.synced_folder ".", "/vagrant", type: 'rsync'
+4. 再次执行vagrant reload命令,这样确保当前的文件夹下的data文件能够正确挂载到虚拟机的/vagrant目录下。
 
-# 1. 创建目录结构
-mkdir -p /opt/sh/{common,hadoop,kafka,flume,cluster,utils}
-mkdir -p /opt/module
 
 # 2. 将上述所有脚本放到对应目录
-# 3. 设置权限
 chmod +x /opt/sh/*/*.sh
 
 # 4. 运行安装脚本
