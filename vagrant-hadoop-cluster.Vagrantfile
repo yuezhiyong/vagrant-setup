@@ -76,7 +76,7 @@ EOF
         dnf clean all
         dnf install -y \
           vim git curl wget net-tools nc \
-          openssh-clients
+          openssh-clients sshpass
 
         systemctl disable --now firewalld || true
         setenforce 0 || true
@@ -133,43 +133,66 @@ EOF"
   # reload 后配置集群 SSH（只在 master）
   # ---------------------------
   config.trigger.after :reload do |t|
-    t.name = "cluster-ssh"
-    t.run_remote = {
-      inline: <<-SHELL
-        set -e
+  t.name = "cluster-ssh"
+  t.run_remote = {
+    inline: <<-SHELL
+      set -e
 
-        USER=#{SSH_USER}
-        NET=#{CLUSTER_NET}
+      USER=vagrant
+      PASS=vagrant
+      NET=192.168.56
 
-        if [ "$(hostname)" != "centos-#{MASTER_ID}" ]; then
-          exit 0
+      if [ "$(hostname)" != "centos-201" ]; then
+        exit 0
+      fi
+
+      echo "=== Configuring SSH cluster (MASTER) ==="
+
+      SSH_DIR=/home/$USER/.ssh
+      AUTH_KEYS=$SSH_DIR/authorized_keys
+      MASTER_KEY=$(cat $SSH_DIR/id_rsa.pub)
+
+      # ---- 1. 本地 master ----
+      echo "-> centos-201 (local)"
+      mkdir -p $SSH_DIR
+      chmod 700 $SSH_DIR
+      grep -qxF "$MASTER_KEY" $AUTH_KEYS 2>/dev/null || echo "$MASTER_KEY" >> $AUTH_KEYS
+      chmod 600 $AUTH_KEYS
+
+      # ---- 2. worker：第一次用 sshpass 推 key ----
+      for id in 202 203; do
+        IP="$NET.$id"
+        NODE="centos-$id"
+
+        echo "-> $NODE"
+
+        # 已免密则跳过
+        if ssh -o BatchMode=yes \
+               -o StrictHostKeyChecking=no \
+               -o UserKnownHostsFile=/dev/null \
+               $USER@$IP "echo ok" >/dev/null 2>&1; then
+          echo "   already configured"
+          continue
         fi
 
-        echo "=== Configuring SSH cluster (MASTER) ==="
+        echo "   first time, using password auth"
 
-        MASTER_KEY="$(cat /home/$USER/.ssh/id_rsa.pub)"
-
-        for id in 201 202 203; do
-          NODE="centos-$id"
-          IP="$NET.$id"
-
-          echo "-> $NODE"
-
-          ssh -o StrictHostKeyChecking=no \
-              -o UserKnownHostsFile=/dev/null \
-              $USER@$IP "
+        sshpass -p "$PASS" ssh \
+          -o StrictHostKeyChecking=no \
+          -o UserKnownHostsFile=/dev/null \
+          $USER@$IP "
             mkdir -p ~/.ssh &&
             chmod 700 ~/.ssh &&
             grep -qxF '$MASTER_KEY' ~/.ssh/authorized_keys 2>/dev/null || \
               echo '$MASTER_KEY' >> ~/.ssh/authorized_keys &&
             chmod 600 ~/.ssh/authorized_keys
           "
-        done
+      done
 
-        echo "=== SSH cluster ready ==="
-      SHELL
-    }
-  end
+      echo "=== SSH cluster ready ==="
+    SHELL
+  }
+end
 
   # ---------------------------
   # VirtualBox 全局
