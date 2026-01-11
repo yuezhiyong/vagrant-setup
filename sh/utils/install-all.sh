@@ -35,9 +35,9 @@ declare -A COMPONENTS=(
 declare -A TARGET_PATHS=(
     ["jdk"]="$MODULE_BASE/jdk1.8.0"
     ["hadoop"]="$MODULE_BASE/hadoop-3"
-    ["zookeeper"]="$MODULE_BASE/zookeeper-3"
-    ["kafka"]="$MODULE_BASE/kafka_2"
-    ["flume"]="$MODULE_BASE/apache-flume-1"
+    ["zookeeper"]="$MODULE_BASE/zookeeper"
+    ["kafka"]="$MODULE_BASE/kafka"
+    ["flume"]="$MODULE_BASE/flume"
 )
 
 print_install_banner() {
@@ -571,15 +571,15 @@ export HADOOP_HOME=${hadoop_home:-$MODULE_BASE/hadoop-3}
 export PATH=\$PATH:\$HADOOP_HOME/bin:\$HADOOP_HOME/sbin
 
 # Zookeeper环境
-export ZOOKEEPER_HOME=${zk_home:-$MODULE_BASE/zookeeper-3}
+export ZOOKEEPER_HOME=${zk_home:-$MODULE_BASE/zookeeper}
 export PATH=\$PATH:\$ZOOKEEPER_HOME/bin
 
 # Kafka环境
-export KAFKA_HOME=${kafka_home:-$MODULE_BASE/kafka_2}
+export KAFKA_HOME=${kafka_home:-$MODULE_BASE/kafka}
 export PATH=\$PATH:\$KAFKA_HOME/bin
 
 # Flume环境
-export FLUME_HOME=${flume_home:-$MODULE_BASE/apache-flume-1}
+export FLUME_HOME=${flume_home:-$MODULE_BASE/flume}
 export PATH=\$PATH:\$FLUME_HOME/bin
 
 # Hadoop进程用户
@@ -625,9 +625,9 @@ alias cstatus='$SCRIPTS_BASE/cluster/status-all.sh'
     # 更新当前脚本的环境变量
     export JDK_HOME="${java_home:-$MODULE_BASE/jdk1.8.0}"
     export HADOOP_HOME="${hadoop_home:-$MODULE_BASE/hadoop-3}"
-    export ZOOKEEPER_HOME="${zk_home:-$MODULE_BASE/zookeeper-3}"
-    export KAFKA_HOME="${kafka_home:-$MODULE_BASE/kafka_2}"
-    export FLUME_HOME="${flume_home:-$MODULE_BASE/apache-flume-1}"
+    export ZOOKEEPER_HOME="${zk_home:-$MODULE_BASE/zookeeper}"
+    export KAFKA_HOME="${kafka_home:-$MODULE_BASE/kafka}"
+    export FLUME_HOME="${flume_home:-$MODULE_BASE/flume}"
     
     # 更新配置文件
     update_config_file
@@ -724,11 +724,11 @@ setup_hosts_file() {
         run_on_host $host "sudo cp /etc/hosts /etc/hosts.backup.\$(date +%Y%m%d)"
         
         # 移除旧条目
-        run_on_host $host "sed -i '/${CLUSTER_HOSTS[0]}/,/^$/d' /etc/hosts"
+        run_on_host $host "sudo sed -i '/${CLUSTER_HOSTS[0]}/,/^$/d' /etc/hosts"
         
         # 添加新条目
-        echo "# 大数据集群节点" | run_on_host $host "cat >> /etc/hosts"
-        echo "$hosts_content" | run_on_host $host "cat >> /etc/hosts"
+        echo "# 大数据集群节点" | run_on_host $host "sudo tee -a /etc/hosts > /dev/null"
+        echo "$hosts_content" | run_on_host $host "sudo tee -a /etc/hosts > /dev/null"
         
         print_success "$host hosts文件更新完成"
     done
