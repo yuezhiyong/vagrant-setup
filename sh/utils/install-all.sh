@@ -799,14 +799,16 @@ install_all_components() {
         exit 1
     fi
     
-    # 1. 创建目录结构
-    create_directories_structure
     
-    # 2. 设置SSH
+    
+    # 1. 设置SSH
     setup_ssh_keys || {
         print_error "SSH设置失败"
         exit 1
     }
+
+    # 2. 创建目录结构
+    create_directories_structure
     
     # 3. 设置hosts文件
     setup_hosts_file
