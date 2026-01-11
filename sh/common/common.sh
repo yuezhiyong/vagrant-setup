@@ -1,5 +1,4 @@
 #!/bin/bash
-
 # ============================================
 # 公共函数库
 # ============================================
@@ -63,20 +62,16 @@ run_on_cluster() {
 # 在指定节点执行命令
 run_on_host() {
     local host=$1
-    local cmd=$2
-    local background=${3:-false}
-    
-    print_info "在 $host 上执行: $cmd"
-    if [ "$background" = true ]; then
-        $SSH_CMD $host "$cmd" &
-    else
-        $SSH_CMD $host "$cmd"
-        if [ $? -ne 0 ]; then
-            print_error "在 $host 上执行命令 $cmd 失败"
-            return 1
-        fi
+    shift
+
+    print_info "在 $host 上执行: $*"
+    $SSH_CMD "$host" "$@"
+    local rc=$?
+
+    if [ $rc -ne 0 ]; then
+        print_error "在 $host 上执行失败: $*"
+        return $rc
     fi
-    return 0
 }
 
 # 检查进程是否运行
