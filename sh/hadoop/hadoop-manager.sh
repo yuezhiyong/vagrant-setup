@@ -61,14 +61,53 @@ stop_hdfs() {
 # ---------- YARN ----------
 
 start_yarn() {
-    print_step "启动 YARN"
-    run_on_host "$YARN_NODE" "$HADOOP_HOME/sbin/start-yarn.sh"
-    sleep 3
+    print_step "启动 YARN 按角色分发"
+
+    # 确保 yarn-site.xml 中 yarn.resourcemanager.hostname 已设置正确
+    # MASTER_NODE 可以是 NameNode，这里假设 RESOURCE_MANAGER_NODE 单独指定
+    # NODEMANAGER_NODES 是需要启动 NodeManager 的节点列表（可是所有节点也可以启动 NM）
+
+    RESOURCE_MANAGER_NODE=${YARN_NODE:-"centos-202"}
+
+    for host in "${CLUSTER_HOSTS[@]}"; do
+        print_info "在 $host 启动 YARN 服务..."
+        if [ "$host" = "$RESOURCE_MANAGER_NODE" ]; then
+            # 启动 ResourceManager
+            run_on_host "$host" "$HADOOP_HOME/sbin/yarn-daemon.sh start resourcemanager"
+            print_success "$host: ResourceManager 已启动"
+        fi
+
+        # 启动 NodeManager
+        run_on_host "$host" "$HADOOP_HOME/sbin/yarn-daemon.sh start nodemanager"
+        print_success "$host: NodeManager 已启动"
+
+        sleep 1
+    done
+
+    print_success "YARN 集群启动完成"
+
+    # 可选：检查 YARN 状态
+    check_yarn_status
 }
 
 stop_yarn() {
-    print_step "停止 YARN"
-    run_on_host "$YARN_NODE" "$HADOOP_HOME/sbin/stop-yarn.sh"
+    print_step "停止 YARN 按角色分发"
+
+    RESOURCE_MANAGER_NODE=${YARN_NODE:-"centos-202"}
+
+    for host in "${CLUSTER_HOSTS[@]}"; do
+        print_info "停止 $host 的 NodeManager..."
+        run_on_host "$host" "$HADOOP_HOME/sbin/yarn-daemon.sh stop nodemanager" || true
+
+        if [ "$host" = "$RESOURCE_MANAGER_NODE" ]; then
+            print_info "停止 $host 的 ResourceManager..."
+            run_on_host "$host" "$HADOOP_HOME/sbin/yarn-daemon.sh stop resourcemanager" || true
+        fi
+
+        sleep 1
+    done
+
+    print_success "YARN 集群已停止"
 }
 
 # ---------- 状态检查 ----------
@@ -240,19 +279,7 @@ EOF
     local mapred_site_conf=$(cat << EOF
 <?xml version="1.0"?>
 <?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
-<!--
-  Licensed under the Apache License, Version 2.0 (the "License");
-  you may not use this file except in compliance with the License.
-  You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
-
-  Unless required by applicable law or agreed to in writing, software
-  distributed under the License is distributed on an "AS IS" BASIS,
-  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-  See the License for the specific language governing permissions and
-  limitations under the License. See accompanying LICENSE file.
--->
 
 <!-- Put site-specific property overrides in this file. -->
 
