@@ -1,196 +1,161 @@
 #!/bin/bash
-
 # ============================================
-# Hadoop集群启动脚本
+# Hadoop 3.x 集群管理脚本（官方方式）
 # ============================================
 
-# Dynamically calculate SCRIPTS_BASE based on script location
+set -e
+
+# ---------- 初始化 ----------
 SCRIPTS_BASE=$(cd "$(dirname "$0")/.." && pwd)
 
-# Temporarily set SCRIPTS_BASE for loading config files
 export SCRIPTS_BASE
-source $SCRIPTS_BASE/common/config.sh
+source "$SCRIPTS_BASE/common/config.sh"
+source "$SCRIPTS_BASE/common/color.sh"
+source "$SCRIPTS_BASE/common/common.sh"
 
-# Override SCRIPTS_BASE with the actual script location
-unset SCRIPTS_BASE
-SCRIPTS_BASE=$(cd "$(dirname "$0")/.." && pwd)
-export SCRIPTS_BASE
+HDFS_RPC_PORT=8020
+HDFS_HTTP_PORT=9870
+YARN_RM_PORT=8088
 
-source $SCRIPTS_BASE/common/common.sh
+# ---------- 工具函数 ----------
+
+check_port() {
+    local host=$1
+    local port=$2
+    run_on_host "$host" "nc -z localhost $port >/dev/null 2>&1"
+}
+
+# ---------- HDFS ----------
+
+format_namenode() {
+    print_warning "⚠️ 即将格式化 NameNode（清空 HDFS 数据）"
+    read -p "确认格式化？(y/n): " confirm
+    [ "$confirm" = "y" ] || return 1
+
+    run_on_host "$MASTER_NODE" \
+        "$HADOOP_HOME/bin/hdfs namenode -format -force"
+}
 
 start_hdfs() {
-    print_step "启动HDFS"
-    
-    # 格式化NameNode（仅在第一次启动时）
+    print_step "启动 HDFS (Hadoop 3.x)"
+
     if [ "$1" = "format" ]; then
-        print_warning "格式化NameNode，这将清除所有HDFS数据！"
-        read -p "确认格式化？(y/n): " confirm
-        if [ "$confirm" = "y" ]; then
-            run_on_host $MASTER_NODE "$HADOOP_HOME/bin/hdfs namenode -format -force"
-        fi
+        format_namenode
     fi
-    
-    # 启动NameNode
-    print_info "启动NameNode..."
-    run_on_host $MASTER_NODE "$HADOOP_HOME/sbin/hadoop-daemon.sh start namenode"
-    wait_for_process $MASTER_NODE "NameNode" "/tmp/hadoop-*-namenode.pid"
-    
-    # 启动DataNodes
-    print_info "启动DataNodes..."
-    run_on_cluster "$HADOOP_HOME/sbin/hadoop-daemon.sh start datanode" true
-    sleep 3
-    
-    # 启动SecondaryNameNode
-    print_info "启动SecondaryNameNode..."
-    run_on_host $MASTER_NODE "$HADOOP_HOME/sbin/hadoop-daemon.sh start secondarynamenode"
-    
-    # 检查HDFS状态
-    print_info "检查HDFS状态..."
-    run_on_host $MASTER_NODE "$HADOOP_HOME/bin/hdfs dfsadmin -report"
+
+    print_info "执行 start-dfs.sh"
+    run_on_host "$MASTER_NODE" "$HADOOP_HOME/sbin/start-dfs.sh"
+
+    sleep 5
 }
 
 stop_hdfs() {
-    print_step "停止HDFS"
-    
-    # 停止SecondaryNameNode
-    print_info "停止SecondaryNameNode..."
-    run_on_host $MASTER_NODE "$HADOOP_HOME/sbin/hadoop-daemon.sh stop secondarynamenode"
-    
-    # 停止DataNodes
-    print_info "停止DataNodes..."
-    run_on_cluster "$HADOOP_HOME/sbin/hadoop-daemon.sh stop datanode"
-    
-    # 停止NameNode
-    print_info "停止NameNode..."
-    run_on_host $MASTER_NODE "$HADOOP_HOME/sbin/hadoop-daemon.sh stop namenode"
+    print_step "停止 HDFS"
+    run_on_host "$MASTER_NODE" "$HADOOP_HOME/sbin/stop-dfs.sh"
 }
 
+# ---------- YARN ----------
+
 start_yarn() {
-    print_step "启动YARN"
-    
-    # 启动ResourceManager
-    print_info "启动ResourceManager..."
-    run_on_host $MASTER_NODE "$HADOOP_HOME/sbin/yarn-daemon.sh start resourcemanager"
-    
-    # 启动NodeManagers
-    print_info "启动NodeManagers..."
-    run_on_cluster "$HADOOP_HOME/sbin/yarn-daemon.sh start nodemanager" true
-    
-    # 启动JobHistoryServer
-    print_info "启动JobHistoryServer..."
-    run_on_host $MASTER_NODE "$HADOOP_HOME/sbin/mr-jobhistory-daemon.sh start historyserver"
-    
-    # 检查YARN状态
-    print_info "检查YARN状态..."
-    run_on_host $MASTER_NODE "$HADOOP_HOME/bin/yarn node -list"
+    print_step "启动 YARN"
+    run_on_host "$MASTER_NODE" "$HADOOP_HOME/sbin/start-yarn.sh"
+    sleep 3
 }
 
 stop_yarn() {
-    print_step "停止YARN"
-    
-    # 停止JobHistoryServer
-    print_info "停止JobHistoryServer..."
-    run_on_host $MASTER_NODE "$HADOOP_HOME/sbin/mr-jobhistory-daemon.sh stop historyserver"
-    
-    # 停止NodeManagers
-    print_info "停止NodeManagers..."
-    run_on_cluster "$HADOOP_HOME/sbin/yarn-daemon.sh stop nodemanager"
-    
-    # 停止ResourceManager
-    print_info "停止ResourceManager..."
-    run_on_host $MASTER_NODE "$HADOOP_HOME/sbin/yarn-daemon.sh stop resourcemanager"
+    print_step "停止 YARN"
+    run_on_host "$MASTER_NODE" "$HADOOP_HOME/sbin/stop-yarn.sh"
 }
 
-start_historyserver() {
-    print_info "启动JobHistoryServer..."
-    run_on_host $MASTER_NODE "$HADOOP_HOME/sbin/mr-jobhistory-daemon.sh start historyserver"
-}
+# ---------- 状态检查 ----------
 
-stop_historyserver() {
-    print_info "停止JobHistoryServer..."
-    run_on_host $MASTER_NODE "$HADOOP_HOME/sbin/mr-jobhistory-daemon.sh stop historyserver"
-}
+check_hdfs_status() {
+    print_step "HDFS 状态"
 
-check_hadoop_status() {
-    print_step "Hadoop集群状态"
-    
-    print_info "HDFS进程状态:"
     for host in "${CLUSTER_HOSTS[@]}"; do
-        local nn_status=$(check_process $host "NameNode")
-        local dn_status=$(check_process $host "DataNode")
-        local snn_status=$(check_process $host "SecondaryNameNode")
-        echo "  $host: NameNode[$nn_status] DataNode[$dn_status] SecondaryNameNode[$snn_status]"
+        local nn="DOWN"
+        local dn="DOWN"
+
+        check_port "$host" "$HDFS_RPC_PORT" && nn="UP"
+        run_on_host "$host" "pgrep -f DataNode >/dev/null 2>&1" && dn="UP"
+
+        echo "  $host: NameNode[$nn] DataNode[$dn]"
     done
-    
-    print_info "YARN进程状态:"
-    for host in "${CLUSTER_HOSTS[@]}"; do
-        local rm_status=$(check_process $host "ResourceManager")
-        local nm_status=$(check_process $host "NodeManager")
-        local jhs_status=$(check_process $host "JobHistoryServer")
-        echo "  $host: ResourceManager[$rm_status] NodeManager[$nm_status] JobHistoryServer[$jhs_status]"
-    done
+
+    print_info "HDFS 报告:"
+    run_on_host "$MASTER_NODE" "$HADOOP_HOME/bin/hdfs dfsadmin -report" || true
 }
+
+check_yarn_status() {
+    print_step "YARN 状态"
+
+    for host in "${CLUSTER_HOSTS[@]}"; do
+        local rm="DOWN"
+        local nm="DOWN"
+
+        check_port "$host" "$YARN_RM_PORT" && rm="UP"
+        run_on_host "$host" "pgrep -f NodeManager >/dev/null 2>&1" && nm="UP"
+
+        echo "  $host: ResourceManager[$rm] NodeManager[$nm]"
+    done
+
+    print_info "YARN 节点列表:"
+    run_on_host "$MASTER_NODE" "$HADOOP_HOME/bin/yarn node -list" || true
+}
+
+check_all_status() {
+    check_hdfs_status
+    echo ""
+    check_yarn_status
+}
+
+# ---------- 命令入口 ----------
 
 case "$1" in
     start)
         start_hdfs "$2"
         start_yarn
-        start_historyserver
-        check_hadoop_status
+        check_all_status
         ;;
-        
     stop)
         stop_yarn
         stop_hdfs
-        stop_historyserver
-        check_hadoop_status
         ;;
-        
     restart)
         stop_yarn
         stop_hdfs
         sleep 3
         start_hdfs
         start_yarn
-        check_hadoop_status
+        check_all_status
         ;;
-        
     status)
-        check_hadoop_status
+        check_all_status
         ;;
-        
     start-hdfs)
         start_hdfs "$2"
         ;;
-        
     stop-hdfs)
         stop_hdfs
         ;;
-        
     start-yarn)
         start_yarn
         ;;
-        
     stop-yarn)
         stop_yarn
         ;;
-        
     format)
-        start_hdfs "format"
+        format_namenode
         ;;
-        
     *)
         echo "用法: $0 {start|stop|restart|status|start-hdfs|stop-hdfs|start-yarn|stop-yarn|format}"
         echo ""
-        echo "命令说明:"
-        echo "  start [format]   启动整个Hadoop集群，可选格式化"
-        echo "  stop             停止整个Hadoop集群"
-        echo "  restart          重启整个Hadoop集群"
-        echo "  status           查看Hadoop集群状态"
-        echo "  start-hdfs       只启动HDFS"
-        echo "  stop-hdfs        只停止HDFS"
-        echo "  start-yarn       只启动YARN"
-        echo "  stop-yarn        只停止YARN"
-        echo "  format           格式化NameNode并启动"
+        echo "说明:"
+        echo "  start [format]   启动 HDFS + YARN（可选格式化）"
+        echo "  stop             停止整个 Hadoop"
+        echo "  restart          重启 Hadoop"
+        echo "  status           查看集群状态"
+        echo "  format           仅格式化 NameNode"
         exit 1
+        ;;
 esac

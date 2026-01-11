@@ -255,23 +255,51 @@ setup_hadoop_config() {
     cat > /tmp/core-site.xml << EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+<!--
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License. See accompanying LICENSE file.
+-->
+
+<!-- Put site-specific property overrides in this file. -->
+
 <configuration>
-    <property>
-        <name>fs.defaultFS</name>
-        <value>hdfs://${MASTER_NODE}:9000</value>
-    </property>
-    <property>
-        <name>hadoop.tmp.dir</name>
-        <value>$MODULE_BASE/hadoop/tmp</value>
-    </property>
-    <property>
-        <name>hadoop.proxyuser.root.hosts</name>
-        <value>*</value>
-    </property>
-    <property>
-        <name>hadoop.proxyuser.root.groups</name>
-        <value>*</value>
-    </property>
+        <property>
+                <name>fs.defaultFS</name>
+                <value>hdfs://${MASTER_NODE}:8020</value>
+        </property>
+        <property>
+                <name>hadoop.tmp.dir</name>
+                <value>$MODULE_BASE/hadoop/data</value>
+        </property>
+        <property>
+                <name>hadoop.http.staticuser.user</name>
+                <value>vagrant</value>
+        </property>
+        <property>
+                <name>hadoop.proxyuser.vagrant.hosts</name>
+                <value>*</value>
+        </property>
+        <property>
+                <name>hadoop.proxyuser.vagrant.groups</name>
+                <value>*</value>
+        </property>
+        <property>
+                <name>hadoop.proxyuser.vagrant.users</name>
+                <value>*</value>
+        </property>
+        <property>
+                <name>hadoop.security.authorization</name>
+                <value>false</value>
+        </property>
 </configuration>
 EOF
 
@@ -279,87 +307,138 @@ EOF
     cat > /tmp/hdfs-site.xml << EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+<!--
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License. See accompanying LICENSE file.
+-->
+
+<!-- Put site-specific property overrides in this file. -->
+
 <configuration>
-    <property>
-        <name>dfs.replication</name>
-        <value>3</value>
-    </property>
-    <property>
-        <name>dfs.namenode.name.dir</name>
-        <value>file://${HDFS_NAME_DIR[0]}</value>
-    </property>
-    <property>
-        <name>dfs.datanode.data.dir</name>
-        <value>file://${HDFS_DATA_DIR[0]}</value>
-    </property>
-    <property>
-        <name>dfs.namenode.checkpoint.dir</name>
-        <value>file://${HDFS_CHECKPOINT_DIR[0]}</value>
-    </property>
-    <property>
-        <name>dfs.permissions.enabled</name>
-        <value>false</value>
-    </property>
+        <property>
+                <name>dfs.namenode.http-address</name>
+                <value>${MASTER_NODE}:9870</value>
+        </property>
+        <property>
+                <name>dfs.namenode.secondary.http-address</name>
+                <value>${CLUSTER_HOSTS[2]}:9868</value>
+        </property>
+        <property>
+                <name>dfs.replication</name>
+                <value>3</value>
+        </property>
 </configuration>
 EOF
 
     # 创建yarn-site.xml
     cat > /tmp/yarn-site.xml << EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+<?xml version="1.0"?>
+<!--
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License. See accompanying LICENSE file.
+-->
 <configuration>
-    <property>
-        <name>yarn.resourcemanager.hostname</name>
-        <value>${MASTER_NODE}</value>
-    </property>
-    <property>
-        <name>yarn.nodemanager.aux-services</name>
-        <value>mapreduce_shuffle</value>
-    </property>
-    <property>
-        <name>yarn.nodemanager.aux-services.mapreduce_shuffle.class</name>
-        <value>org.apache.hadoop.mapred.ShuffleHandler</value>
-    </property>
-    <property>
-        <name>yarn.nodemanager.local-dirs</name>
-        <value>${YARN_NODEMANAGER_DIR[0]}</value>
-    </property>
-    <property>
-        <name>yarn.nodemanager.log-dirs</name>
-        <value>$MODULE_BASE/hadoop/logs/userlogs</value>
-    </property>
-    <property>
-        <name>yarn.log-aggregation-enable</name>
-        <value>true</value>
-    </property>
+
+<!-- Site specific YARN configuration properties -->
+        <property>
+                <name>yarn.nodemanager.aux-services</name>
+                <value>mapreduce_shuffle</value>
+        </property>
+        <property>
+                <name>yarn.resourcemanager.hostname</name>
+                <value>${MASTER_NODE}</value>
+        </property>
+        <property>
+                <name>yarn.nodemanager.env-whitelist</name>
+                <value>JAVA_HOME,HADOOP_COMMON_HOME,HADOOP_HDFS_HOME,HADOOP_CONF_HOME,CLASSPATH_PREPEND_DISTCACHE,HADOOP_YARN_HOME,HADOOP_MAPRED_HOME</value>
+        </property>
+        <property>
+                <name>yarn.scheduler.minimium-allocation-mb</name>
+                <value>512</value>
+        </property>
+        <property>
+                <name>yarn.scheduler.maximum-allocation-mb</name>
+                <value>2048</value>
+        </property>
+        <property>
+                <name>yarn.nodemanager.pmem-check-enabled</name>
+                <value>true</value>
+        </property>
+        <property>
+                <name>yarn.nodemanager.resource.memory-mb</name>
+                <value>2048</value>
+        </property>
+        <property>
+                <name>yarn.nodemanager.vmem-check-enabled</name>
+                <value>false</value>
+        </property>
+        <property>
+                <name>yarn.log-aggregation-enable</name>
+                <value>true</value>
+        </property>
+        <property>
+                <name>yarn.log.server.url</name>
+                <value>http://${MASTER_NODE}:19888/jobhistory/logs</value>
+        </property>
+        <property>
+                <name>yarn.log-aggregation.retain-seconds</name>
+                <value>604800</value>
+        </property>
+
 </configuration>
 EOF
 
     # 创建mapred-site.xml
     cat > /tmp/mapred-site.xml << EOF
-<?xml version="1.0" encoding="UTF-8"?>
+<?xml version="1.0"?>
 <?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+<!--
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License. See accompanying LICENSE file.
+-->
+
+<!-- Put site-specific property overrides in this file. -->
+
 <configuration>
-    <property>
-        <name>mapreduce.framework.name</name>
-        <value>yarn</value>
-    </property>
-    <property>
-        <name>yarn.app.mapreduce.am.env</name>
-        <value>HADOOP_MAPRED_HOME=$HADOOP_HOME</value>
-    </property>
-    <property>
-        <name>mapreduce.map.env</name>
-        <value>HADOOP_MAPRED_HOME=$HADOOP_HOME</value>
-    </property>
-    <property>
-        <name>mapreduce.reduce.env</name>
-        <value>HADOOP_MAPRED_HOME=$HADOOP_HOME</value>
-    </property>
-    <property>
-        <name>mapreduce.application.classpath</name>
-        <value>\$HADOOP_HOME/share/hadoop/mapreduce/*:\$HADOOP_HOME/share/hadoop/mapreduce/lib/*</value>
-    </property>
+        <property>
+                <name>mapreduce.framework.name</name>
+                <value>yarn</value>
+        </property>
+        <property>
+                <name>mapreduce.jobhistory.address</name>
+                <value>${MASTER_NODE}:10020</value>
+        </property>
+        <property>
+                <name>mapreduce.jobhistory.webapp.address</name>
+                <value>${MASTER_NODE}:19888</value>
+        </property>
 </configuration>
 EOF
 
@@ -379,6 +458,17 @@ EOF
         run_on_host $host "cp $hadoop_conf_dir/mapred-site.xml.template $hadoop_conf_dir/mapred-site.xml 2>/dev/null || true"
         
         print_success "$host: Hadoop配置完成"
+    done
+    
+    # 更新hadoop-env.sh配置
+    print_info "更新Hadoop环境配置..."
+    for host in "${CLUSTER_HOSTS[@]}"; do
+        run_on_host $host "sed -i '/^export HADOOP_SECURE_DN_USER=/ s/^/#/' $hadoop_conf_dir/hadoop-env.sh 2>/dev/null || true"
+        run_on_host $host "sed -i '/^export JSVC_HOME=/ s/^/#/' $hadoop_conf_dir/hadoop-env.sh 2>/dev/null || true"
+        
+        # 添加安全配置
+        run_on_host $host "grep -q 'export HADOOP_ALLOW_ROOT=' $hadoop_conf_dir/hadoop-env.sh 2>/dev/null || echo 'export HADOOP_ALLOW_ROOT=true' >> $hadoop_conf_dir/hadoop-env.sh"
+        run_on_host $host "grep -q 'export HADOOP_SECURE_DN_USER=' $hadoop_conf_dir/hadoop-env.sh 2>/dev/null || echo '# export HADOOP_SECURE_DN_USER=root' >> $hadoop_conf_dir/hadoop-env.sh"
     done
     
     # 清理临时文件
