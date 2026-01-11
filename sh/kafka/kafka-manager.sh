@@ -27,10 +27,10 @@ setup_kafka() {
     # 为每个节点生成配置文件
     local broker_id=1
     for host in "${CLUSTER_HOSTS[@]}"; do
-        local kafka_conf="
+        local kafka_conf=$(cat << EOF
 # Kafka Broker配置 - $host
 broker.id=$broker_id
-listeners=PLAINTEXT://$host:9092
+listeners=PLAINTEXT://0.0.0.0:9092
 advertised.listeners=PLAINTEXT://$host:9092
 num.network.threads=3
 num.io.threads=8
@@ -57,12 +57,11 @@ min.insync.replicas=2
 # 其他配置
 delete.topic.enable=true
 auto.create.topics.enable=false
-"
+EOF
+)
         
-        # 写入临时文件并分发
-        echo "$kafka_conf" > /tmp/server-$broker_id.properties
-        run_on_host $host "cp /tmp/server-$broker_id.properties $KAFKA_HOME/config/server.properties"
-        rm -f /tmp/server-$broker_id.properties
+        # 直接将配置写入远程主机
+        echo "$kafka_conf" | run_on_host $host "cat > $KAFKA_HOME/config/server.properties"
         
         broker_id=$((broker_id + 1))
     done
@@ -93,19 +92,41 @@ start_kafka_node() {
     local host=$1
     
     # 检查是否已运行
-    local status=$(check_process $host "kafka.Kafka" "$KAFKA_PID_FILE")
-    if [ "$status" = "running" ]; then
+    if run_on_host $host "pgrep -f 'kafka.Kafka' >/dev/null 2>&1"; then
         print_info "$host Kafka已在运行"
         return 0
     fi
     
     # 启动Kafka
     print_info "在 $host 启动Kafka..."
-    run_on_host $host "cd $KAFKA_HOME && nohup bin/kafka-server-start.sh config/server.properties > $KAFKA_LOG_DIR/kafka-$host.log 2>&1 &"
+    run_on_host $host "bash -s" << EOF
+set -a
+KAFKA_HEAP_OPTS="-Xmx512M -Xms256M"
+set +a
+
+cd $KAFKA_HOME
+nohup bin/kafka-server-start.sh config/server.properties > $KAFKA_LOG_DIR/kafka-$host.log 2>&1 &
+EOF
     
     # 等待启动
     sleep 5
-    if wait_for_process $host "kafka.Kafka" "$KAFKA_PID_FILE" 15; then
+    local count=0
+    local max_attempts=30
+    local started=0
+    
+    while [ $count -lt $max_attempts ]; do
+        if run_on_host $host "pgrep -f 'kafka.Kafka' >/dev/null 2>&1"; then
+            # 额外检查端口是否开放
+            if run_on_host $host "timeout 5 bash -c '</dev/tcp/localhost/9092' >/dev/null 2>&1"; then
+                started=1
+                break
+            fi
+        fi
+        sleep 2
+        ((count++))
+    done
+    
+    if [ $started -eq 1 ]; then
         print_success "$host Kafka启动成功"
         return 0
     else
@@ -155,8 +176,7 @@ stop_kafka_node() {
     
     # 等待停止
     sleep 5
-    local status=$(check_process $host "kafka.Kafka" "$KAFKA_PID_FILE")
-    if [ "$status" = "stopped" ]; then
+    if ! run_on_host $host "pgrep -f 'kafka.Kafka' >/dev/null 2>&1"; then
         print_success "$host Kafka已停止"
         return 0
     else
@@ -181,17 +201,16 @@ check_kafka_status() {
     
     for host in "${CLUSTER_HOSTS[@]}"; do
         print_info "检查 $host 状态..."
-        local status=$(check_process $host "kafka.Kafka" "$KAFKA_PID_FILE")
-        if [ "$status" = "running" ]; then
-            # 尝试连接Broker
-            run_on_host $host "cd $KAFKA_HOME && bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1"
-            if [ $? -eq 0 ]; then
+        
+        if run_on_host $host "pgrep -f 'kafka.Kafka' >/dev/null 2>&1"; then
+            # 再做一次真正的 Broker 可用性检查
+            if run_on_host $host "cd $KAFKA_HOME && bin/kafka-broker-api-versions.sh --bootstrap-server $host:9092 >/dev/null 2>&1"; then
                 print_success "$host: 运行中 (健康)"
             else
-                print_warning "$host: 运行中 (无法连接)"
+                print_warning "$host: 进程存在，但 Broker 不可用"
             fi
         else
-            print_error "$host: 未运行"
+            print_error "$host: Kafka未运行"
         fi
     done
     
@@ -251,8 +270,7 @@ case "$1" in
         ;;
         
     list-topics)
-        local first_host="${CLUSTER_HOSTS[0]}"
-        run_on_host $first_host "cd $KAFKA_HOME && bin/kafka-topics.sh --list --bootstrap-server $first_host:9092"
+        run_on_host "${CLUSTER_HOSTS[0]}" "cd $KAFKA_HOME && bin/kafka-topics.sh --list --bootstrap-server ${CLUSTER_HOSTS[0]}:9092"
         ;;
         
     *)
