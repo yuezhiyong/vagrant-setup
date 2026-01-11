@@ -719,17 +719,14 @@ setup_hosts_file() {
     # 更新所有节点的hosts文件
     for host in "${CLUSTER_HOSTS[@]}"; do
         print_info "更新 $host /etc/hosts..."
-        
         # 备份原有文件
         run_on_host $host "sudo cp /etc/hosts /etc/hosts.backup.\$(date +%Y%m%d)"
-        
         # 移除旧条目
-        run_on_host $host "sudo sed -i '/${CLUSTER_HOSTS[0]}/,/^$/d' /etc/hosts"
+        # run_on_host $host "sudo sed -i '/${CLUSTER_HOSTS[0]}/,/^$/d' /etc/hosts"
         
         # 添加新条目
         echo "# 大数据集群节点" | run_on_host $host "sudo tee -a /etc/hosts > /dev/null"
         echo "$hosts_content" | run_on_host $host "sudo tee -a /etc/hosts > /dev/null"
-        
         print_success "$host hosts文件更新完成"
     done
 }
@@ -811,7 +808,7 @@ install_all_components() {
     create_directories_structure
     
     # 3. 设置hosts文件
-    setup_hosts_file
+    # setup_hosts_file
     
     # 4. 安装组件
     print_step "安装组件"
