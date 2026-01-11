@@ -423,6 +423,7 @@ autopurge.purgeInterval=24
     
     # 分发配置到所有节点
     print_info "分发Zookeeper配置文件..."
+    local id=1
     for host in "${CLUSTER_HOSTS[@]}"; do
         # 创建数据目录
         run_on_host $host "mkdir -p $ZK_DATA_DIR $ZK_LOG_DIR"
@@ -433,11 +434,8 @@ autopurge.purgeInterval=24
         # 写入配置文件
         echo "$zoo_cfg" | run_on_host $host "cat > $ZOOKEEPER_HOME/conf/zoo.cfg"
         
-        # 复制模板
-        run_on_host $host "cp $ZOOKEEPER_HOME/conf/zoo_sample.cfg $ZOOKEEPER_HOME/conf/zoo.cfg 2>/dev/null || true"
-        
         print_success "$host: Zookeeper配置完成 (myid=$id)"
-        id=$((id % 3 + 1))
+        id=$((id + 1))
     done
     
     return 0
@@ -859,6 +857,9 @@ install_all_components() {
     print_step "安装完成"
     print_success "大数据集群安装完成！"
     
+    # 使环境变量立即在所有节点生效
+    run_on_cluster "source ~/.bashrc"
+    
     echo ""
     echo -e "${GREEN}使用说明:${NC}"
     echo "1. 启动集群: $SCRIPTS_BASE/cluster/start-all.sh"
@@ -868,7 +869,7 @@ install_all_components() {
     echo "   - 测试Hadoop: hdfs dfs -ls /"
     echo "   - 测试Kafka: $SCRIPTS_BASE/kafka/kafka-manager.sh create-topic test"
     echo ""
-    echo -e "${YELLOW}请重启终端或运行 'source ~/.bashrc' 使环境变量生效${NC}"
+    echo -e "${YELLOW}环境变量已生效${NC}"
 }
 
 # 安装模式选择

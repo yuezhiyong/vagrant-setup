@@ -55,17 +55,19 @@ autopurge.purgeInterval=24
         id=$((id + 1))
     done
     
-    # 写入配置文件
-    echo "$zk_conf_template" > /tmp/zookeeper.properties
-    distribute_file "/tmp/zookeeper.properties" "$ZOOKEEPER_HOME/conf"
-    rm -f /tmp/zookeeper.properties
+    # 写入配置文件为标准的zoo.cfg
+    echo "$zk_conf_template" > /tmp/zoo.cfg
+    distribute_file "/tmp/zoo.cfg" "$ZOOKEEPER_HOME/conf"
+    rm -f /tmp/zoo.cfg
 }
 
 start_zookeeper_node() {
     local host=$1
     
     # 检查是否已运行
-    local status=$(check_process $host "QuorumPeerMain" "$ZK_PID_FILE")
+    # Zookeeper的PID文件在数据目录中，而不是配置的ZK_PID_FILE路径
+    local zk_pid_file="$ZK_DATA_DIR/zookeeper_server.pid"
+    local status=$(check_process $host "QuorumPeerMain" "$zk_pid_file")
     if [ "$status" = "running" ]; then
         print_info "$host Zookeeper已在运行"
         return 0
@@ -76,7 +78,7 @@ start_zookeeper_node() {
     run_on_host $host "cd $ZOOKEEPER_HOME && nohup bin/zkServer.sh start > $ZK_LOG_DIR/zk-$host.log 2>&1 &"
     
     # 等待启动
-    if wait_for_process $host "QuorumPeerMain" "$ZK_PID_FILE" 10; then
+    if wait_for_process $host "QuorumPeerMain" "$zk_pid_file" 10; then
         print_success "$host Zookeeper启动成功"
         return 0
     else
@@ -89,7 +91,7 @@ start_zookeeper_cluster() {
     print_step "启动Zookeeper集群"
     
     # 检查设置
-    if [ ! -f "$ZOOKEEPER_HOME/conf/zookeeper.properties" ]; then
+    if [ ! -f "$ZOOKEEPER_HOME/conf/zoo.cfg" ]; then
         print_warning "Zookeeper配置文件不存在，正在设置..."
         setup_zookeeper
     fi
@@ -121,7 +123,8 @@ stop_zookeeper_node() {
     
     # 等待停止
     sleep 3
-    local status=$(check_process $host "QuorumPeerMain" "$ZK_PID_FILE")
+    local zk_pid_file="$ZK_DATA_DIR/zookeeper_server.pid"
+    local status=$(check_process $host "QuorumPeerMain" "$zk_pid_file")
     if [ "$status" = "stopped" ]; then
         print_success "$host Zookeeper已停止"
         return 0
@@ -147,7 +150,8 @@ check_zookeeper_status() {
     
     for host in "${CLUSTER_HOSTS[@]}"; do
         print_info "检查 $host 状态..."
-        local status=$(check_process $host "QuorumPeerMain" "$ZK_PID_FILE")
+        local zk_pid_file="$ZK_DATA_DIR/zookeeper_server.pid"
+        local status=$(check_process $host "QuorumPeerMain" "$zk_pid_file")
         if [ "$status" = "running" ]; then
             local mode=$(run_on_host $host "echo stat | nc localhost 2181 2>/dev/null | grep Mode | cut -d: -f2")
             if [ -n "$mode" ]; then
