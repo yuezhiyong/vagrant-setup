@@ -33,8 +33,8 @@ declare -A COMPONENTS=(
 
 # 期望的安装路径
 declare -A TARGET_PATHS=(
-    ["jdk"]="$MODULE_BASE/jdk1.8.0"
-    ["hadoop"]="$MODULE_BASE/hadoop-3"
+    ["jdk"]="$MODULE_BASE/java"
+    ["hadoop"]="$MODULE_BASE/hadoop"
     ["zookeeper"]="$MODULE_BASE/zookeeper"
     ["kafka"]="$MODULE_BASE/kafka"
     ["flume"]="$MODULE_BASE/flume"
@@ -151,31 +151,38 @@ install_component() {
     local remote_tar="/tmp/$(basename $tar_file)"
     
     # 在所有节点解压
-    local actual_dir=""
     for host in "${CLUSTER_HOSTS[@]}"; do
         print_info "在 $host 上安装 $component..."
-        local result=$(run_on_host $host "
-            # 清理旧目录
-            rm -rf $target_path
-            
-            # 解压文件
-            mkdir -p $target_path
-            if [[ \"$remote_tar\" == *.tar.gz ]] || [[ \"$remote_tar\" == *.tgz ]]; then
-                tar -xzf \"$remote_tar\" -C \"$target_path\" --strip-components=1
-            elif [[ \"$remote_tar\" == *.zip ]]; then
-                unzip -q \"$remote_tar\" -d \"$target_path\"
-            fi
-            
-            # 获取实际目录名
-            ls -d $target_path/*/ 2>/dev/null | head -1 | sed 's|/$||'
-        ")
-        
-        if [ -n "$result" ] && [ "$result" != "$target_path" ]; then
-            actual_dir="$result"
-        fi
+        # 使用here document传递命令，避免转义问题
+        run_on_host $host "bash -s" << EOF
+# 清理旧目录
+rm -rf $target_path
+
+# 创建临时目录用于解压
+temp_dir=\$(mktemp -d)
+if [[ "$remote_tar" == *.tar.gz ]] || [[ "$remote_tar" == *.tgz ]]; then
+    tar -xzf "$remote_tar" -C "\$temp_dir"
+elif [[ "$remote_tar" == *.zip ]]; then
+    unzip -q "$remote_tar" -d "\$temp_dir"
+fi
+
+# 获取解压后的实际目录名
+extracted_dir=\$(ls -d \$temp_dir/*/ 2>/dev/null | head -1 | xargs basename)
+
+# 将解压后的目录重命名到目标路径
+if [ -n "\$extracted_dir" ]; then
+    mv "\$temp_dir/\$extracted_dir" "$target_path"
+else
+    # 如果没有子目录，则直接移动内容
+    mv \$temp_dir/* $target_path/ 2>/dev/null || mv \$temp_dir/.[^.]* $target_path/ 2>/dev/null
+fi
+
+# 清理临时目录
+rm -rf "\$temp_dir"
+EOF
         
         # 检查安装是否成功
-        if run_on_host $host "[ -d \"$target_path\" ] && [ \"\$(ls -A $target_path)\" ]"; then
+        if run_on_host $host "[ -d \"$target_path\" ] && [ \"$(ls -A $target_path)\" ]"; then
             print_success "$host: $component 安装成功"
         else
             print_error "$host: $component 安装失败"
@@ -186,12 +193,6 @@ install_component() {
     # 清理临时文件
     run_on_cluster "rm -f $remote_tar"
     
-    # 如果解压后有多级目录，创建符号链接
-    if [ -n "$actual_dir" ] && [ "$actual_dir" != "$target_path" ]; then
-        print_info "创建符号链接: $actual_dir -> $target_path"
-        run_on_cluster "ln -sfn \"$actual_dir\" \"$target_path\""
-    fi
-    
     print_success "$component 安装完成"
     return 0
 }
@@ -200,7 +201,7 @@ setup_java() {
     print_step "设置Java环境"
     
     # 查找Java安装
-    local java_dirs=$(ssh $MASTER_NODE "ls -d $MODULE_BASE/jdk* 2>/dev/null")
+    local java_dirs=$(ssh $MASTER_NODE "ls -d $MODULE_BASE/java* 2>/dev/null")
     if [ -z "$java_dirs" ]; then
         print_error "未找到Java安装"
         return 1
@@ -563,11 +564,11 @@ setup_environment_variables() {
 # ============================================
 
 # Java环境
-export JAVA_HOME=${java_home:-$MODULE_BASE/jdk1.8.0}
+export JAVA_HOME=${java_home:-$MODULE_BASE/java}
 export PATH=\$JAVA_HOME/bin:\$PATH
 
 # Hadoop环境
-export HADOOP_HOME=${hadoop_home:-$MODULE_BASE/hadoop-3}
+export HADOOP_HOME=${hadoop_home:-$MODULE_BASE/hadoop}
 export PATH=\$PATH:\$HADOOP_HOME/bin:\$HADOOP_HOME/sbin
 
 # Zookeeper环境
@@ -623,8 +624,8 @@ alias cstatus='$SCRIPTS_BASE/cluster/status-all.sh'
     done
     
     # 更新当前脚本的环境变量
-    export JDK_HOME="${java_home:-$MODULE_BASE/jdk1.8.0}"
-    export HADOOP_HOME="${hadoop_home:-$MODULE_BASE/hadoop-3}"
+    export JDK_HOME="${java_home:-$MODULE_BASE/java}"
+    export HADOOP_HOME="${hadoop_home:-$MODULE_BASE/hadoop}"
     export ZOOKEEPER_HOME="${zk_home:-$MODULE_BASE/zookeeper}"
     export KAFKA_HOME="${kafka_home:-$MODULE_BASE/kafka}"
     export FLUME_HOME="${flume_home:-$MODULE_BASE/flume}"
@@ -744,23 +745,23 @@ create_directories_structure() {
         run_on_host $host "sudo chown vagrant:vagrant $MODULE_BASE"
         
         # 数据目录
-        run_on_host $host "sudo mkdir -p $ZK_DATA_DIR $ZK_LOG_DIR"
-        run_on_host $host "sudo mkdir -p $KAFKA_LOG_DIR $FLUME_LOG_DIR"
-        run_on_host $host "sudo mkdir -p $LOG_DIR"
+        #run_on_host $host "sudo mkdir -p $ZK_DATA_DIR $ZK_LOG_DIR"
+        #run_on_host $host "sudo mkdir -p $KAFKA_LOG_DIR $FLUME_LOG_DIR"
+        #run_on_host $host "sudo mkdir -p $LOG_DIR"
         
         # 设置数据目录权限
-        run_on_host $host "sudo chown -R vagrant:vagrant $(dirname $ZK_DATA_DIR) $(dirname $KAFKA_LOG_DIR) $(dirname $FLUME_LOG_DIR) $LOG_DIR 2>/dev/null || true"
+        #run_on_host $host "sudo chown -R vagrant:vagrant $(dirname $ZK_DATA_DIR) $(dirname $KAFKA_LOG_DIR) $(dirname $FLUME_LOG_DIR) $LOG_DIR 2>/dev/null || true"
         
         # Hadoop目录
-        run_on_host $host "sudo mkdir -p ${HDFS_NAME_DIR[@]} ${HDFS_DATA_DIR[@]} ${HDFS_CHECKPOINT_DIR[@]} ${YARN_NODEMANAGER_DIR[@]}"
-        run_on_host $host "sudo mkdir -p $MODULE_BASE/hadoop/{tmp,logs}"
+        #run_on_host $host "sudo mkdir -p ${HDFS_NAME_DIR[@]} ${HDFS_DATA_DIR[@]} ${HDFS_CHECKPOINT_DIR[@]} ${YARN_NODEMANAGER_DIR[@]}"
+        #run_on_host $host "sudo mkdir -p $MODULE_BASE/hadoop/{tmp,logs}"
         
         # 设置Hadoop目录权限
-        run_on_host $host "sudo chown -R vagrant:vagrant $(dirname ${HDFS_NAME_DIR[0]}) $MODULE_BASE/hadoop 2>/dev/null || true"
+        #run_on_host $host "sudo chown -R vagrant:vagrant $(dirname ${HDFS_NAME_DIR[0]}) $MODULE_BASE/hadoop 2>/dev/null || true"
         
         # 脚本目录
-        run_on_host $host "sudo mkdir -p $SCRIPTS_BASE"
-        run_on_host $host "sudo chown vagrant:vagrant $SCRIPTS_BASE 2>/dev/null || true"
+        #run_on_host $host "sudo mkdir -p $SCRIPTS_BASE"
+        #run_on_host $host "sudo chown vagrant:vagrant $SCRIPTS_BASE 2>/dev/null || true"
         
         print_success "$host 目录创建完成"
     done
