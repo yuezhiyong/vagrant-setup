@@ -2,359 +2,178 @@
 # vi: set ft=ruby :
 
 Vagrant.configure("2") do |config|
+  # ---------------------------
+  # 基础配置
+  # ---------------------------
   config.vm.box = "almalinux/8"
   config.vbguest.auto_update = false
   config.vbguest.no_remote = true
 
   CLUSTER_NET = "192.168.56"
-  NODES = [101, 102, 103]
-  
-  # 全局禁用 GPG
-  config.vm.provision "shell", 
-    run: "once",
-    inline: <<-SHELL
-      echo "Disabling GPG check globally..."
-      echo "gpgcheck=0" >> /etc/dnf/dnf.conf
-      echo "localpkg_gpgcheck=0" >> /etc/dnf/dnf.conf
-      echo "repo_gpgcheck=0" >> /etc/dnf/dnf.conf
-      
-      # 禁用所有已启用仓库的 GPG 检查
-      find /etc/yum.repos.d/ -name "*.repo" -type f | while read repo; do
-        sed -i 's/^gpgcheck=.*/gpgcheck=0/g' "$repo"
-        sed -i 's/^repo_gpgcheck=.*/repo_gpgcheck=0/g' "$repo"
-      done
-      
-      # 导入 GPG 密钥
-      rpm --import /etc/pki/rpm-gpg/RPM-GPG-KEY-* 2>/dev/null || true
-    SHELL
+  NODES       = [201, 202, 203]
+  MASTER_ID   = 201
+  SSH_USER    = "vagrant"
+  SSH_PASS    = "vagrant"
 
-  # =============================
-  # 定义集群节点
-  # =============================
-  NODES.each do |i|
-    config.vm.define "centos-#{i}" do |node|
-      node.vm.hostname = "centos-#{i}"
+  # ---------------------------
+  # 全局关闭 GPG
+  # ---------------------------
+  config.vm.provision "shell", run: "once", inline: <<-SHELL
+    echo "Disabling GPG check globally..."
+    sed -i '/^gpgcheck/d' /etc/dnf/dnf.conf
+    sed -i '/^localpkg_gpgcheck/d' /etc/dnf/dnf.conf
+    sed -i '/^repo_gpgcheck/d' /etc/dnf/dnf.conf
+    echo "gpgcheck=0" >> /etc/dnf/dnf.conf
+    echo "localpkg_gpgcheck=0" >> /etc/dnf/dnf.conf
+    echo "repo_gpgcheck=0" >> /etc/dnf/dnf.conf
 
-      # --- Host-Only 网络（集群内部通信）---
+    find /etc/yum.repos.d -name "*.repo" -exec \
+      sed -i 's/^gpgcheck=.*/gpgcheck=0/' {} \\; || true
+  SHELL
+
+  # ---------------------------
+  # 定义节点
+  # ---------------------------
+  NODES.each do |id|
+    config.vm.define "centos-#{id}" do |node|
+      node.vm.hostname = "centos-#{id}"
+
       node.vm.network "private_network",
-        ip: "#{CLUSTER_NET}.#{i}"
+        ip: "#{CLUSTER_NET}.#{id}"
 
-      # --- 仅 master 节点做端口转发 ---
-      if i == 101
-        {
-          9870 => 9870
-        }.each do |guest, host|
-          node.vm.network "forwarded_port",
-            guest: guest,
-            host: host,
-            host_ip: "127.0.0.1",
-            auto_correct: true
-        end
+      if id == MASTER_ID
+        node.vm.network "forwarded_port",
+          guest: 9870,
+          host: 9870,
+          host_ip: "127.0.0.1",
+          auto_correct: true
       end
 
-      # --- 虚拟机资源 ---
       node.vm.provider "virtualbox" do |vb|
-        vb.name   = "centos-#{i}"
-        vb.memory = 1024
+        vb.name   = "centos-#{id}"
+        vb.memory = 2048
         vb.cpus   = 1
         vb.gui    = false
       end
 
-      # =============================
-      # Provision 脚本（基础设置）
-      # =============================
+      # ---------------------------
+      # 基础系统初始化
+      # ---------------------------
       node.vm.provision "shell", inline: <<-SHELL
         set -e
 
-        echo "=== Base setup for centos-#{i} ==="
+        echo "=== Base setup: centos-#{id} ==="
 
-        # ---------- DNS ----------
+        # DNS
         cat > /etc/resolv.conf <<EOF
 nameserver 223.5.5.5
 nameserver 223.6.6.6
 EOF
 
-        # ---------- 主机名 / 时区 ----------
-        hostnamectl set-hostname centos-#{i}
+        hostnamectl set-hostname centos-#{id}
         timedatectl set-timezone Asia/Shanghai
 
-        # ---------- 基础工具 ----------
         dnf clean all
-        rm -rf /var/cache/dnf/*
-        dnf install -y vim nc git wget curl net-tools openssh-clients sshpass
+        dnf install -y \
+          vim git curl wget net-tools nc \
+          openssh-clients
 
-
-        # ---------- 防火墙 / SELinux ----------
         systemctl disable --now firewalld || true
         setenforce 0 || true
         sed -i 's/^SELINUX=.*/SELINUX=disabled/' /etc/selinux/config
 
-        # ---------- hosts ----------
-        sed -i '/centos-10[1-3]/d' /etc/hosts
+        # hosts
+        sed -i '/centos-20[1-3]/d' /etc/hosts
         cat >> /etc/hosts <<EOF
-#{CLUSTER_NET}.101 centos-101
-#{CLUSTER_NET}.102 centos-102
-#{CLUSTER_NET}.103 centos-103
+#{CLUSTER_NET}.201 centos-201
+#{CLUSTER_NET}.202 centos-202
+#{CLUSTER_NET}.203 centos-203
 EOF
-        # ---------- 启用 SSH 密码认证 ----------
-        sed -i 's/^PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config || true
-        sed -i 's/^#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config || true
+
+        # SSH config
+        sed -i 's/^#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config
+        sed -i 's/^PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config
         systemctl restart sshd
-        echo "=== Base setup done for centos-#{i} ==="
+        echo "=== Base setup done: centos-#{id} ==="
       SHELL
 
-      # =============================
-      # 节点本地 SSH 配置（每次启动都执行）
-      # =============================
-      node.vm.provision "local-ssh", 
-        type: "shell",
-        run: "always",
-        inline: <<-SHELL
-          set -e
-          
-          NET=#{CLUSTER_NET}
-          USER=vagrant
-          SSH_DIR=/home/$USER/.ssh
-          
-          echo "=== Local SSH setup on $(hostname) ==="
-          
-          # 等待网络接口
-          echo "Waiting for network interface..."
-          for i in {1..30}; do
-            if ip a | grep -q "$NET"; then
-              echo "Network interface found."
-              break
-            fi
-            sleep 1
-          done
-          
-          # 创建 SSH 目录（使用 root 权限）
-          mkdir -p $SSH_DIR
-          chown -R $USER:$USER $SSH_DIR
-          chmod 700 $SSH_DIR
-          
-          # 生成 SSH key（如果不存在）
-          if [ ! -f $SSH_DIR/id_rsa ]; then
-            echo "Generating SSH key for $USER..."
-            # 使用 su 切换用户生成 key
-            su - $USER -c "ssh-keygen -t rsa -N '' -f ~/.ssh/id_rsa"
-          fi
-          
-          # 配置 SSH config（使用 su 切换用户）
-          su - $USER -c "cat > ~/.ssh/config <<EOF
-Host $NET.*
+      # ---------------------------
+      # 每次启动都执行的 SSH 本地配置（关键）
+      # ---------------------------
+      node.vm.provision "shell", run: "always", inline: <<-SHELL
+        set -e
+
+        USER=#{SSH_USER}
+        HOME_DIR=/home/$USER
+        SSH_DIR=$HOME_DIR/.ssh
+
+        mkdir -p $SSH_DIR
+        chown -R $USER:$USER $SSH_DIR
+        chmod 700 $SSH_DIR
+
+        if [ ! -f $SSH_DIR/id_rsa ]; then
+          su - $USER -c "ssh-keygen -t rsa -N '' -f ~/.ssh/id_rsa"
+        fi
+
+        su - $USER -c "cat > ~/.ssh/config <<EOF
+Host *
   StrictHostKeyChecking no
   UserKnownHostsFile=/dev/null
-  ConnectTimeout=10
+  LogLevel ERROR
 EOF"
-          
-          # 设置正确的权限
-          su - $USER -c "chmod 600 ~/.ssh/config"
-          
-          echo "=== Local SSH setup done on $(hostname) ==="
-        SHELL
 
-      # --- 同步目录（禁用）---
-      node.vm.synced_folder "./data", "/vagrant", disabled: true
+        su - $USER -c "chmod 600 ~/.ssh/config"
+      SHELL
+
+      node.vm.synced_folder ".", "/vagrant", disabled: true
     end
   end
 
-  # =============================
-  # 触发器：在所有虚拟机启动后配置集群 SSH
-  # =============================
-  config.trigger.after :reload do |trigger|
-    trigger.name = "configure-cluster-ssh"
-    trigger.info = "Configuring SSH passwordless access between all cluster nodes"
-    
-    
-    trigger.run_remote = {
+  # ---------------------------
+  # reload 后配置集群 SSH（只在 master）
+  # ---------------------------
+  config.trigger.after :reload do |t|
+    t.name = "cluster-ssh"
+    t.run_remote = {
       inline: <<-SHELL
         set -e
-        
-        NET="#{CLUSTER_NET}"
-        USER="vagrant"
-        PASSWORD="vagrant"
-        
-        echo "========================================="
-        echo "Configuring SSH passwordless cluster access"
-        echo "Master node: $(hostname)"
-        echo "========================================="
-        
-        # 只允许在 master 节点执行
-        if [ "$(hostname)" != "centos-101" ]; then
-          echo "Not master node, skipping cluster SSH setup"
+
+        USER=#{SSH_USER}
+        NET=#{CLUSTER_NET}
+
+        if [ "$(hostname)" != "centos-#{MASTER_ID}" ]; then
           exit 0
         fi
-        
-        # 函数：等待节点就绪
-        wait_for_node() {
-          local node_ip=\$1
-          local node_name=\$2
-          
-          echo -n "Waiting for \$node_name (\$node_ip) to be reachable..."
-          
-          # 等待 ping 通
-          for i in {1..60}; do
-            if ping -c1 -W1 \$node_ip >/dev/null 2>&1; then
-              echo -n " ping OK..."
-              break
-            fi
-            sleep 2
-            echo -n "."
-          done
-          
-          # 等待 SSH 服务
-          for i in {1..30}; do
-            if nc -z -w5 \$node_ip 22 2>/dev/null; then
-              echo " SSH OK"
-              return 0
-            fi
-            sleep 2
-            echo -n "."
-          done
-          
-          echo " TIMEOUT"
-          return 1
-        }
-        
-        # 函数：配置 SSH 免密到目标节点
-        setup_ssh_to_node() {
-          local node_ip=\$1
-          local node_name=\$2
-          
-          echo "Setting up SSH to \$node_name (\$node_ip)..."
-          
-          # 检查是否已经配置过
-          if ssh -o "ConnectTimeout=5" -o "BatchMode=yes" \
-             $USER@$node_ip "echo connected" 2>/dev/null; then
-            echo "SSH already configured for \$node_name"
-            return 0
-          fi
-          
-          # 使用 sshpass 复制公钥
-          echo "Copying SSH key to \$node_name..."
-          if sshpass -p "\$PASSWORD" \
-             ssh-copy-id -i /home/$USER/.ssh/id_rsa.pub \
-             -o "StrictHostKeyChecking=no" \
-             -o "ConnectTimeout=10" \
-             "\$USER@\$node_ip"; then
-            echo "✓ SSH key copied to \$node_name"
-            return 0
-          else
-            echo "✗ Failed to configure SSH for \$node_name using ssh-copy-id"
-            return 1
-          fi
-        }
-        
-        # 1. 收集 master 节点的公钥并添加到自己的 authorized_keys
-        echo "=== Step 1: Configuring self-access ==="
-        MASTER_PUB_KEY="\$(cat /home/\$USER/.ssh/id_rsa.pub)"
-        if ! grep -q "\$MASTER_PUB_KEY" /home/\$USER/.ssh/authorized_keys 2>/dev/null; then
-          echo "\$MASTER_PUB_KEY" >> /home/\$USER/.ssh/authorized_keys
-          chmod 600 /home/\$USER/.ssh/authorized_keys
-          echo "✓ Added master key to its own authorized_keys"
-        else
-          echo "Master key already in authorized_keys"
-        fi
-        
-        # 2. 配置到其他节点的 SSH 免密
-        echo ""
-        echo "=== Step 2: Configuring access to worker nodes ==="
-        
-        WORKER_NODES=("102" "103")
-        ALL_SUCCESS=true
-        SSH_HOME="/home/${USER}"
-        
-        for node_num in "\${WORKER_NODES[@]}"; do
-          NODE_IP="\$NET.\$node_num"
-          NODE_NAME="centos-\$node_num"
-          
-          echo "--- Configuring \$NODE_NAME ---"
-          
-          # 等待节点就绪
-          if ! wait_for_node "\$NODE_IP" "\$NODE_NAME"; then
-            echo "Skipping \$NODE_NAME (not reachable)"
-            ALL_SUCCESS=false
-            continue
-          fi
-          
-          # 配置 SSH 免密
-          if setup_ssh_to_node "\$NODE_IP" "\$NODE_NAME"; then
-            # 从 worker 节点获取公钥并添加到 master
-            echo "start setup ssh to \$NODE_IP ..."
-            WORKER_PUB_KEY="$(ssh -o 'StrictHostKeyChecking=no' -o 'BatchMode=yes' -o 'ConnectTimeout=5' \$USER@\$NODE_IP "cat ${SSH_HOME}/.ssh/id_rsa.pub")"
-            echo "Worker(\$NODE_NAME) pub key: \$WORKER_PUB_KEY ..."
-            if [ -n "\$WORKER_PUB_KEY" ]; then
-              if ! grep -q "\$WORKER_PUB_KEY" /home/\$USER/.ssh/authorized_keys 2>/dev/null; then
-                echo "\$WORKER_PUB_KEY" >> /home/\$USER/.ssh/authorized_keys
-                echo "✓ Added \$NODE_NAME key to master's authorized_keys"
-              fi
-            fi
-          else
-            ALL_SUCCESS=false
-          fi
+
+        echo "=== Configuring SSH cluster (MASTER) ==="
+
+        MASTER_KEY="$(cat /home/$USER/.ssh/id_rsa.pub)"
+
+        for id in 201 202 203; do
+          NODE="centos-$id"
+          IP="$NET.$id"
+
+          echo "-> $NODE"
+
+          ssh -o StrictHostKeyChecking=no \
+              -o UserKnownHostsFile=/dev/null \
+              $USER@$IP "
+            mkdir -p ~/.ssh &&
+            chmod 700 ~/.ssh &&
+            grep -qxF '$MASTER_KEY' ~/.ssh/authorized_keys 2>/dev/null || \
+              echo '$MASTER_KEY' >> ~/.ssh/authorized_keys &&
+            chmod 600 ~/.ssh/authorized_keys
+          "
         done
-        
-        # 3. 分发完整的 authorized_keys 到所有节点
-        echo "=== Step 3: Distributing complete authorized_keys ==="
-        
-        ALL_KEYS="\$(cat /home/\$USER/.ssh/authorized_keys)"
-        
-        for node_num in "101" "102" "103"; do
-          NODE_IP="\$NET.\$node_num"
-          NODE_NAME="centos-\$node_num"
-          echo -n "Updating \$NODE_NAME..."
-          if ssh \$USER@\$NODE_IP "echo '\$ALL_KEYS' > ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys" 2>/dev/null; then
-            echo " ✓"
-          else
-            echo " ✗"
-            ALL_SUCCESS=false
-          fi
-        done
-        
-        # 4. 测试 SSH 连接
-        echo "=== Step 4: Testing SSH connections ==="
-        
-        echo "Testing from master to all nodes:"
-        for node_num in "101" "102" "103"; do
-          NODE_IP="\$NET.\$node_num"
-          if ssh -o ConnectTimeout=5 \$USER@\$NODE_IP "hostname" 2>/dev/null; then
-            echo "  ✓ master → \$NODE_IP"
-          else
-            echo "  ✗ master → \$NODE_IP"
-            ALL_SUCCESS=false
-          fi
-        done
-        
-        echo ""
-        if [ "\$ALL_SUCCESS" = "true" ]; then
-          echo "========================================="
-          echo "✓ SSH cluster configuration COMPLETE!"
-          echo "All nodes can access each other without password"
-          echo "========================================="
-        else
-          echo "========================================="
-          echo "⚠ SSH cluster configuration PARTIALLY COMPLETE"
-          echo "Some connections may not work"
-          echo "========================================="
-        fi
-        
-        # 显示集群信息
-        echo ""
-        echo "=== Cluster Information ==="
-        echo "Master Node:  centos-101  (#{CLUSTER_NET}.101)"
-        echo "Worker Nodes: centos-102  (#{CLUSTER_NET}.102)"
-        echo "               centos-103  (#{CLUSTER_NET}.103)"
-        echo ""
-        echo "Web UI (if Hadoop is installed): http://localhost:9870"
-        echo "========================================="
+
+        echo "=== SSH cluster ready ==="
       SHELL
     }
   end
-  
- 
 
-  # ---------- VirtualBox 全局 ----------
+  # ---------------------------
+  # VirtualBox 全局
+  # ---------------------------
   config.vm.provider "virtualbox" do |vb|
     vb.check_guest_additions = false
     vb.functional_vboxsf = false
