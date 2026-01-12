@@ -11,10 +11,9 @@ LOG_DIR=$MAXWELL_HOME/logs
 PID_DIR=$MAXWELL_HOME/run
 PID_FILE=$PID_DIR/maxwell.pid
 
+
 # Maxwell 节点（通常只需要 1 台）
-MAXWELL_NODES=(
-centos-201
-)
+MAXWELL_NODES=(centos-201)
 
 SSH_CMD="ssh -o StrictHostKeyChecking=no"
 
@@ -86,24 +85,25 @@ EOF
 }
 
 # ========= 集群操作 =========
-start() {
+start_maxwell() {
     print_info "Starting Maxwell..."
-    for host in "\${MAXWELL_NODES[@]}"; do
-        start_node \$host
+    for host in ${MAXWELL_NODES[@]}; do
+        echo "Starting $host..."
+        start_node $host
     done
 }
 
-stop() {
+stop_maxwell() {
     print_info "Stopping Maxwell..."
-    for host in "\${MAXWELL_NODES[@]}"; do
-        stop_node \$host
+    for host in ${MAXWELL_NODES[@]}; do
+        stop_node $host
     done
 }
 
-status() {
+status_maxwell() {
     print_info "Checking Maxwell status..."
-    for host in "\${MAXWELL_NODES[@]}"; do
-        status_node \$host
+    for host in ${MAXWELL_NODES[@]}; do
+        status_node $host
     done
 }
 
@@ -113,22 +113,66 @@ restart() {
     start
 }
 
+
+bootstrap_table() {
+    local db=$1
+    local table=$2
+    local where_clause=$3
+
+
+    if [ -z "$db" ] || [ -z "$table" ]; then
+        echo "用法: $0 bootstrap <db> <table>"
+        exit 1
+    fi
+
+    # 1检查 Maxwell 主进程是否运行
+    if ! pgrep -f "com.zendesk.maxwell.Maxwell" >/dev/null 2>&1; then
+        print_error "Maxwell 未运行，请先执行: $0 start"
+        exit 1
+    fi
+
+    # 2防止重复 bootstrap
+    if [ -f "$BOOT_PID" ] && kill -0 "$(cat $BOOT_PID)" 2>/dev/null; then
+        print_warning "bootstrap 已在运行中 (PID=$(cat $BOOT_PID))"
+        echo "日志: tail -f $BOOT_LOG"
+        exit 0
+    fi
+    print_info "Bootstrapping $db.$table (background mode)"
+
+    nohup $MAXWELL_HOME/bin/maxwell-bootstrap \
+        --config $MAXWELL_CONF \
+        --database $db \
+        --table $table \
+        > $LOG_DIR/bootstrap-$db-$table.log 2>&1 &
+
+    echo "Bootstrap started, log:"
+    echo "  tail -f $LOG_DIR/bootstrap-$db-$table.log"
+}
+
 # ========= 主入口 =========
 case "$1" in
     start)
-        start
+        start_maxwell
         ;;
     stop)
-        stop
+        stop_maxwell
         ;;
     restart)
-        restart
+        stop_maxwell
+        sleep 2
+        start_maxwell
         ;;
     status)
-        status
+        status_maxwell
+        ;;
+    bootstrap)
+        bootstrap_table "$2" "$3" "$4"
         ;;
     *)
-        echo "Usage: $0 {start|stop|restart|status}"
+        echo "Usage: $0 {start|stop|restart|status|bootstrap}"
+        echo ""
+        echo "Examples:"
+        echo "  $0 bootstrap order_db orders"
         exit 1
         ;;
 esac
