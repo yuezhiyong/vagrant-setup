@@ -75,7 +75,7 @@ EOF
 
         dnf clean all
         dnf install -y \
-          vim git curl wget net-tools nc \
+          vim git curl wget net-tools python3 nc \
           openssh-clients sshpass
 
         systemctl disable --now firewalld || true
