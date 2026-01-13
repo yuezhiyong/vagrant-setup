@@ -149,6 +149,43 @@ bootstrap_table() {
     echo "  tail -f $LOG_DIR/bootstrap-$db-$table.log"
 }
 
+# 配置 Maxwell 集群环境
+setup_maxwell() {
+    print_info "配置 Maxwell 集群环境..."
+    
+    # 检查 Maxwell 是否已安装
+    if [ ! -d "$MAXWELL_HOME" ]; then
+        print_error "Maxwell 未安装，请先安装 Maxwell 到 $MAXWELL_HOME"
+        exit 1
+    fi
+    
+    # 创建必要目录
+    mkdir -p "$LOG_DIR" "$PID_DIR" "$MAXWELL_HOME/conf"
+    
+    # 创建默认配置文件
+    cat > "$MAXWELL_CONF" <<EOF
+# Maxwell 配置文件
+
+# MySQL 配置
+mysql_host=centos-201
+mysql_user=maxwell
+mysql_password=maxwell
+mysql_port=3306
+
+# Kafka 配置
+producer=kafka
+kafka.bootstrap.servers=centos-201:9092,centos-202:9092,centos-203:9092
+kafka_topic=maxwell
+
+# 其他配置
+log_level=INFO
+EOF
+
+    print_info "Maxwell 配置完成"
+    print_info "配置文件已创建: $MAXWELL_CONF"
+    print_info "可使用以下命令启动: $0 start"
+}
+
 # ========= 主入口 =========
 case "$1" in
     start)
@@ -168,8 +205,11 @@ case "$1" in
     bootstrap)
         bootstrap_table "$2" "$3" "$4"
         ;;
+    setup)
+        setup_maxwell
+        ;;
     *)
-        echo "Usage: $0 {start|stop|restart|status|bootstrap}"
+        echo "Usage: $0 {start|stop|restart|status|bootstrap|setup}"
         echo ""
         echo "Examples:"
         echo "  $0 bootstrap order_db orders"
