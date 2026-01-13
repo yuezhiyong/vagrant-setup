@@ -10,6 +10,7 @@ SCRIPTS_BASE=$(cd "$(dirname "$0")/.." && pwd)
 # Temporarily set SCRIPTS_BASE for loading config files
 export SCRIPTS_BASE
 source $SCRIPTS_BASE/common/config.sh
+source $SCRIPTS_BASE/common/color.sh
 
 # Override SCRIPTS_BASE with the actual script location
 unset SCRIPTS_BASE
@@ -63,28 +64,28 @@ autopurge.purgeInterval=24
 
 start_zookeeper_node() {
     local host=$1
-    
-    # 检查是否已运行
-    # Zookeeper的PID文件在数据目录中，而不是配置的ZK_PID_FILE路径
-    local zk_pid_file="$ZK_DATA_DIR/zookeeper_server.pid"
-    local status=$(check_process $host "QuorumPeerMain" "$zk_pid_file")
-    if [ "$status" = "running" ]; then
-        print_info "$host Zookeeper已在运行"
+
+    local port_status=$(CAPTURE_OUTPUT=true run_on_host $host "nc -z localhost 2181 >/dev/null 2>&1 && echo 'open' || echo 'closed'")
+    if [ "$port_status" = "open" ]; then
+        print_info "$host Zookeeper已在运行 (2181端口开放)"
         return 0
     fi
-    
-    # 启动Zookeeper
+
     print_info "在 $host 启动Zookeeper..."
-    run_on_host $host "cd $ZOOKEEPER_HOME && nohup bin/zkServer.sh start > $ZK_LOG_DIR/zk-$host.log 2>&1 &"
-    
-    # 等待启动
-    if wait_for_process $host "QuorumPeerMain" "$zk_pid_file" 10; then
-        print_success "$host Zookeeper启动成功"
-        return 0
-    else
-        print_error "$host Zookeeper启动失败"
-        return 1
-    fi
+    run_on_host $host "cd $ZOOKEEPER_HOME && nohup bin/zkServer.sh start conf/zoo.cfg > $ZK_LOG_DIR/zk-$host.log 2>&1 &"
+
+    local retries=15
+    while (( retries-- > 0 )); do
+        port_status=$(CAPTURE_OUTPUT=true run_on_host $host "nc -z localhost 2181 >/dev/null 2>&1 && echo 'open' || echo 'closed'")
+        if [ "$port_status" = "open" ]; then
+            print_success "$host Zookeeper启动成功"
+            return 0
+        fi
+        sleep 2
+    done
+
+    print_error "$host Zookeeper启动失败"
+    return 1
 }
 
 start_zookeeper_cluster() {
@@ -117,22 +118,13 @@ start_zookeeper_cluster() {
 
 stop_zookeeper_node() {
     local host=$1
-    
+    local port_status=$(CAPTURE_OUTPUT=true run_on_host $host  "nc -z localhost 2181 >/dev/null 2>&1 && echo 'open' || echo 'closed'")
+    if [ "$port_status" = "closed" ]; then
+        print_info "$host Zookeeper已停止"
+        return 0
+    fi
     print_info "在 $host 停止Zookeeper..."
     run_on_host $host "cd $ZOOKEEPER_HOME && bin/zkServer.sh stop"
-    
-    # 等待停止
-    sleep 3
-    local zk_pid_file="$ZK_DATA_DIR/zookeeper_server.pid"
-    local status=$(check_process $host "QuorumPeerMain" "$zk_pid_file")
-    if [ "$status" = "stopped" ]; then
-        print_success "$host Zookeeper已停止"
-        return 0
-    else
-        print_warning "$host Zookeeper可能仍在运行，尝试强制停止..."
-        run_on_host $host "pkill -f 'QuorumPeerMain'"
-        return 1
-    fi
 }
 
 stop_zookeeper_cluster() {
@@ -147,18 +139,11 @@ stop_zookeeper_cluster() {
 
 check_zookeeper_status() {
     print_step "Zookeeper集群状态"
-    
     for host in "${CLUSTER_HOSTS[@]}"; do
         print_info "检查 $host 状态..."
-        local zk_pid_file="$ZK_DATA_DIR/zookeeper_server.pid"
-        local status=$(check_process $host "QuorumPeerMain" "$zk_pid_file")
-        if [ "$status" = "running" ]; then
-            local mode=$(run_on_host $host "echo stat | nc localhost 2181 2>/dev/null | grep Mode | cut -d: -f2")
-            if [ -n "$mode" ]; then
-                print_success "$host: 运行中 (Mode:$mode)"
-            else
-                print_warning "$host: 运行中 (无法获取模式)"
-            fi
+        local port_status=$(CAPTURE_OUTPUT=true run_on_host $host "nc -z localhost 2181 >/dev/null 2>&1 && echo 'open' || echo 'closed'")
+        if [ "$port_status" = "open" ]; then
+            print_success "$host: 运行中..."
         else
             print_error "$host: 未运行"
         fi

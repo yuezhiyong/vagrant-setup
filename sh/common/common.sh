@@ -63,13 +63,18 @@ run_on_cluster() {
 run_on_host() {
     local host=$1
     shift
+    local capture_output=${CAPTURE_OUTPUT:-false}
 
-    print_info "在 $host 上执行: $*"
-    $SSH_CMD "$host" "$@"
-    local rc=$?
-
-    if [ $rc -ne 0 ]; then
-        print_error "在 $host 上执行失败: $*"
+    if [ "$capture_output" = true ]; then
+        # 返回 stdout
+        ssh "$host" "$@"
+        return $?
+    else
+        ssh "$host" "$@"
+        local rc=$?
+        if [ $rc -ne 0 ]; then
+            print_error "在 $host 上执行失败: $*"
+        fi
         return $rc
     fi
 }

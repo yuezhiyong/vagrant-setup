@@ -3,15 +3,20 @@
 # Hadoop 3.x 集群管理脚本（官方方式）
 # ============================================
 
-set -e
-
 # ---------- 初始化 ----------
 SCRIPTS_BASE=$(cd "$(dirname "$0")/.." && pwd)
 
+# Temporarily set SCRIPTS_BASE for loading config files
 export SCRIPTS_BASE
+
+# Override SCRIPTS_BASE with the actual script location
+unset SCRIPTS_BASE
+SCRIPTS_BASE=$(cd "$(dirname "$0")/.." && pwd)
+export SCRIPTS_BASE
+
+source $SCRIPTS_BASE/common/common.sh
 source "$SCRIPTS_BASE/common/config.sh"
 source "$SCRIPTS_BASE/common/color.sh"
-source "$SCRIPTS_BASE/common/common.sh"
 
 HDFS_RPC_PORT=8020
 HDFS_HTTP_PORT=9870

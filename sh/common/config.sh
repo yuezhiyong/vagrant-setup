@@ -33,7 +33,7 @@ export HADOOP_USER="vagrant"
 # Zookeeper配置
 export ZK_DATA_DIR="$MODULE_BASE/zookeeper/data"
 export ZK_LOG_DIR="$MODULE_BASE/zookeeper/logs"
-export ZK_PID_FILE="$ZK_DATA_DIR/zookeeper_server.pid"
+export ZK_PID_FILE="$ZK_DATA_DIR/myid"
 
 # Kafka配置
 export KAFKA_LOG_DIR="$MODULE_BASE/kafka/logs"
