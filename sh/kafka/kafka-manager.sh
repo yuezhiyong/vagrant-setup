@@ -74,7 +74,8 @@ check_zookeeper_before_kafka() {
     
     local running_zk=0
     for host in "${CLUSTER_HOSTS[@]}"; do
-        if [ "$(check_process $host 'QuorumPeerMain' "$ZK_PID_FILE")" = "running" ]; then
+        local port_status=$(CAPTURE_OUTPUT=true run_on_host $host "nc -z localhost 2181 >/dev/null 2>&1 && echo 'open' || echo 'closed'")
+        if [ "$port_status" = "open" ]; then
             running_zk=$((running_zk + 1))
         fi
     done
@@ -101,7 +102,7 @@ is_kafka_broker_running() {
     if ! run_on_host "$host" \
         "cd $KAFKA_HOME && timeout 5s \
          bin/kafka-broker-api-versions.sh \
-         --bootstrap-server $host:9092 \
+         --bootstrap-server 0.0.0.0:9092 \
          >/dev/null 2>&1 || true"; then
         return 2
     fi
@@ -127,39 +128,27 @@ wait_for_kafka_ready() {
 start_kafka_node() {
     local host=$1
     
-    # === 1. 已运行直接返回（允许失败）===
-    if run_on_host "$host" "
-        pgrep -f 'kafka.Kafka' >/dev/null 2>&1 &&
-        cd $KAFKA_HOME &&
-        timeout 10s bin/kafka-broker-api-versions.sh \
-            --bootstrap-server $host:9092 \
-            >/dev/null 2>&1
-    "; then
-        print_info "$host Kafka已在运行"
+    # === 1. 检查端口是否在监听（类似ZooKeeper检测方法）===
+    local port_status=$(CAPTURE_OUTPUT=true run_on_host $host "nc -z localhost 9092 >/dev/null 2>&1 && echo 'open' || echo 'closed'")
+    if [ "$port_status" = "open" ]; then
+        print_info "$host Kafka已在运行 (9092端口监听)"
         return 0
     fi
     
     # 启动Kafka
-    print_info "在 $host 启动Kafka..."
-    run_on_host $host "bash -s" << EOF
-set -a
-KAFKA_HEAP_OPTS="-Xmx512M -Xms256M"
-set +a
-
-cd $KAFKA_HOME
-nohup bin/kafka-server-start.sh config/server.properties > $KAFKA_LOG_DIR/kafka-$host.log 2>&1 &
-EOF
+    print_info "在 $host 上启动Kafka..."
+    run_on_host $host "
+        export KAFKA_HEAP_OPTS='-Xmx512M -Xms256M'
+        cd $KAFKA_HOME || exit 1
+        nohup bin/kafka-server-start.sh config/server.properties > $KAFKA_LOG_DIR/kafka-$host.log 2>&1 &
+    "
     
     # 等待启动
     # === 3. 等待 Broker Ready（关键）===
     local retries=30
     while (( retries-- > 0 )); do
-        if run_on_host "$host" "
-            cd $KAFKA_HOME &&
-            timeout 10s bin/kafka-broker-api-versions.sh \
-                --bootstrap-server $host:9092 \
-                >/dev/null 2>&1
-        "; then
+        local port_status=$(CAPTURE_OUTPUT=true run_on_host $host "nc -z localhost 9092 >/dev/null 2>&1 && echo 'open' || echo 'closed'")
+        if [ "$port_status" = "open" ]; then
             print_success "$host Kafka启动成功"
             return 0
         fi

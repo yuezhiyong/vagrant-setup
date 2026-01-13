@@ -64,7 +64,6 @@ run_on_host() {
     local host=$1
     shift
     local capture_output=${CAPTURE_OUTPUT:-false}
-
     if [ "$capture_output" = true ]; then
         # 返回 stdout
         ssh "$host" "$@"

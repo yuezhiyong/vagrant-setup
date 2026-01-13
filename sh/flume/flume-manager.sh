@@ -1,16 +1,22 @@
 #!/bin/bash
-
 # ============================================================
 # Flume Manager Script (Hadoop / Kafka Compatible)
 # ============================================================
 
-# ---------- Script Base ----------
+# Dynamically calculate SCRIPTS_BASE based on script location
+SCRIPTS_BASE=$(cd "$(dirname "$0")/.." && pwd)
+
+# Temporarily set SCRIPTS_BASE for loading config files
+export SCRIPTS_BASE
+source $SCRIPTS_BASE/common/config.sh
+
+# Override SCRIPTS_BASE with the actual script location
+unset SCRIPTS_BASE
 SCRIPTS_BASE=$(cd "$(dirname "$0")/.." && pwd)
 export SCRIPTS_BASE
 
-# ---------- Load Config ----------
-source "$SCRIPTS_BASE/common/config.sh"
-source "$SCRIPTS_BASE/common/common.sh"
+source $SCRIPTS_BASE/common/common.sh
+source $SCRIPTS_BASE/common/config.sh
 
 # ---------- Built-in Flume Agents ----------
 declare -A FLUME_AGENTS=(

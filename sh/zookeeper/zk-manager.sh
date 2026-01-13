@@ -10,7 +10,6 @@ SCRIPTS_BASE=$(cd "$(dirname "$0")/.." && pwd)
 # Temporarily set SCRIPTS_BASE for loading config files
 export SCRIPTS_BASE
 source $SCRIPTS_BASE/common/config.sh
-source $SCRIPTS_BASE/common/color.sh
 
 # Override SCRIPTS_BASE with the actual script location
 unset SCRIPTS_BASE
@@ -66,6 +65,7 @@ start_zookeeper_node() {
     local host=$1
 
     local port_status=$(CAPTURE_OUTPUT=true run_on_host $host "nc -z localhost 2181 >/dev/null 2>&1 && echo 'open' || echo 'closed'")
+    echo "port status: $port_status"
     if [ "$port_status" = "open" ]; then
         print_info "$host Zookeeper已在运行 (2181端口开放)"
         return 0
