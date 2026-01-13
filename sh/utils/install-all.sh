@@ -313,61 +313,7 @@ autopurge.purgeInterval=24
     return 0
 }
 
-setup_kafka_config() {
-    print_step "配置Kafka"
-    
-    local kafka_home=$(ssh $MASTER_NODE "ls -d $MODULE_BASE/kafka* 2>/dev/null | head -1")
-    if [ -z "$kafka_home" ]; then
-        print_error "未找到Kafka安装"
-        return 1
-    fi
-    
-    export KAFKA_HOME="$kafka_home"
-    
-    # 为每个节点生成配置文件
-    local broker_id=1
-    for host in "${CLUSTER_HOSTS[@]}"; do
-        local kafka_conf="
-# Kafka Broker配置 - $host
-broker.id=$broker_id
-listeners=PLAINTEXT://$host:9092
-advertised.listeners=PLAINTEXT://$host:9092
-num.network.threads=3
-num.io.threads=8
-socket.send.buffer.bytes=102400
-socket.receive.buffer.bytes=102400
-socket.request.max.bytes=104857600
 
-# 日志配置
-log.dirs=$KAFKA_LOG_DIR
-num.partitions=3
-num.recovery.threads.per.data.dir=1
-log.retention.hours=168
-log.segment.bytes=1073741824
-log.retention.check.interval.ms=300000
-
-# Zookeeper配置
-zookeeper.connect=$(printf "%s:2181," "${CLUSTER_HOSTS[@]}" | sed 's/,$//')
-zookeeper.connection.timeout.ms=18000
-
-# 副本配置
-default.replication.factor=3
-min.insync.replicas=2
-
-# 其他配置
-delete.topic.enable=true
-auto.create.topics.enable=false
-"
-        
-        # 写入配置文件
-        echo "$kafka_conf" | run_on_host $host "cat > $KAFKA_HOME/config/server.properties"
-        print_success "$host: Kafka配置完成 (broker.id=$broker_id)"
-        
-        broker_id=$((broker_id + 1))
-    done
-    
-    return 0
-}
 
 setup_flume_config() {
     print_step "配置Flume"
@@ -784,7 +730,9 @@ install_all_components() {
         print_warning "Zookeeper配置失败，可能需要手动配置"
     }
     
-    setup_kafka_config || {
+    # 使用kafka-manager.sh的setup功能来配置Kafka
+    print_info "使用kafka-manager.sh配置Kafka集群..."
+    bash $SCRIPTS_BASE/kafka/kafka-manager.sh setup || {
         print_warning "Kafka配置失败，可能需要手动配置"
     }
     
@@ -853,7 +801,9 @@ case "$1" in
         setup_java
         setup_hadoop_config
         setup_zookeeper_config
-        setup_kafka_config
+        # 使用kafka-manager.sh的setup功能来配置Kafka
+        print_info "使用kafka-manager.sh配置Kafka集群..."
+        bash $SCRIPTS_BASE/kafka/kafka-manager.sh setup
         setup_flume_config
         setup_hive_config
         setup_datax_config

@@ -51,26 +51,33 @@ autopurge.purgeInterval=24
 
 start_zookeeper_node() {
     local host=$1
-    
-    # 检查是否已运行
-    local status=$(check_process $host "QuorumPeerMain" "$ZK_PID_FILE")
-    if [ "$status" = "running" ]; then
-        print_info "$host Zookeeper已在运行"
+
+    # 检查端口
+    local port_status=$(run_on_host $host "nc -z localhost 2181 >/dev/null 2>&1 && echo 'open' || echo 'closed'")
+
+    echo "port_status: $port_status"
+    if [ "$port_status" = "open" ]; then
+        print_info "$host Zookeeper已在运行 (2181端口开放)"
         return 0
     fi
-    
+
     # 启动Zookeeper
     print_info "在 $host 启动Zookeeper..."
     run_on_host $host "cd $ZOOKEEPER_HOME && nohup bin/zkServer.sh start > $ZK_LOG_DIR/zk-$host.log 2>&1 &"
-    
+
     # 等待启动
-    if wait_for_process $host "QuorumPeerMain" "$ZK_PID_FILE" 10; then
-        print_success "$host Zookeeper启动成功"
-        return 0
-    else
-        print_error "$host Zookeeper启动失败"
-        return 1
-    fi
+    local retries=15
+    while (( retries-- > 0 )); do
+        local port_status=$(run_on_host $host "nc -z localhost 2181 >/dev/null 2>&1 && echo 'open' || echo 'closed'")
+        if [ "$port_status" = "open" ]; then
+            print_success "$host Zookeeper启动成功"
+            return 0
+        fi
+        sleep 2
+    done
+
+    print_error "$host Zookeeper启动失败"
+    return 1
 }
 
 start_zookeeper_cluster() {
@@ -109,8 +116,10 @@ stop_zookeeper_node() {
     
     # 等待停止
     sleep 3
-    local status=$(check_process $host "QuorumPeerMain" "$ZK_PID_FILE")
-    if [ "$status" = "stopped" ]; then
+    local pid_status=$(check_process $host "QuorumPeerMain" "$ZK_PID_FILE")
+    local port_status=$(run_on_host $host "nc -z localhost 2181 >/dev/null 2>&1 && echo 'open' || echo 'closed'")
+    
+    if [ "$pid_status" = "stopped" ] && [ "$port_status" = "closed" ]; then
         print_success "$host Zookeeper已停止"
         return 0
     else
@@ -135,8 +144,10 @@ check_zookeeper_status() {
     
     for host in "${CLUSTER_HOSTS[@]}"; do
         print_info "检查 $host 状态..."
-        local status=$(check_process $host "QuorumPeerMain" "$ZK_PID_FILE")
-        if [ "$status" = "running" ]; then
+        local pid_status=$(check_process $host "QuorumPeerMain" "$ZK_PID_FILE")
+        local port_status=$(run_on_host $host "nc -z localhost 2181 >/dev/null 2>&1 && echo 'open' || echo 'closed'")
+        
+        if [ "$pid_status" = "running" ] || [ "$port_status" = "open" ]; then
             local mode=$(run_on_host $host "echo stat | nc localhost 2181 2>/dev/null | grep Mode | cut -d: -f2")
             if [ -n "$mode" ]; then
                 print_success "$host: 运行中 (Mode:$mode)"
