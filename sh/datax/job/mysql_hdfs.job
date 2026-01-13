@@ -38,7 +38,7 @@
                                 ],
                                 "jdbcUrl":
                                 [
-                                    "jdbc:mysql://centos-201:3306/gmall?useUnicode=true&characterEncoding=utf8&useSSL=false&rewriteBatchedStatements=true&serverTimezone=Asia/Shanghai"
+                                    "jdbc:mysql://centos-101:3306/gmall?useUnicode=true&characterEncoding=utf8&useSSL=false&rewriteBatchedStatements=true&serverTimezone=Asia/Shanghai"
                                 ]
                             }
                         ],
@@ -51,7 +51,7 @@
                     "name": "hdfswriter",
                     "parameter":
                     {
-                        "defaultFS": "hdfs://centos-201",
+                        "defaultFS": "hdfs://centos-101",
                         "fileType": "orc",
                         "path": "/data_warehouse/ods/base_province_full",
                         "fileName": "${table}",

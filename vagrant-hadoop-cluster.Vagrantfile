@@ -10,8 +10,8 @@ Vagrant.configure("2") do |config|
   config.vbguest.no_remote = true
 
   CLUSTER_NET = "192.168.56"
-  NODES       = [201, 202, 203]
-  MASTER_ID   = 201
+  NODES       = [101, 102, 103]
+  MASTER_ID   = 101
   SSH_USER    = "vagrant"
   SSH_PASS    = "vagrant"
 
@@ -85,9 +85,9 @@ EOF
         # hosts
         sed -i '/centos-20[1-3]/d' /etc/hosts
         cat >> /etc/hosts <<EOF
-#{CLUSTER_NET}.201 centos-201
-#{CLUSTER_NET}.202 centos-202
-#{CLUSTER_NET}.203 centos-203
+#{CLUSTER_NET}.101 centos-101
+#{CLUSTER_NET}.102 centos-102
+#{CLUSTER_NET}.103 centos-103
 EOF
 
         # SSH config
@@ -142,7 +142,7 @@ EOF"
       PASS=vagrant
       NET=192.168.56
 
-      if [ "$(hostname)" != "centos-201" ]; then
+      if [ "$(hostname)" != "centos-101" ]; then
         exit 0
       fi
 
@@ -153,14 +153,14 @@ EOF"
       MASTER_KEY=$(cat $SSH_DIR/id_rsa.pub)
 
       # ---- 1. 本地 master ----
-      echo "-> centos-201 (local)"
+      echo "-> centos-101 (local)"
       mkdir -p $SSH_DIR
       chmod 700 $SSH_DIR
       grep -qxF "$MASTER_KEY" $AUTH_KEYS 2>/dev/null || echo "$MASTER_KEY" >> $AUTH_KEYS
       chmod 600 $AUTH_KEYS
 
       # ---- 2. worker：第一次用 sshpass 推 key ----
-      for id in 202 203; do
+      for id in 102 103; do
         IP="$NET.$id"
         NODE="centos-$id"
 

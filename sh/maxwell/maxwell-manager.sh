@@ -13,7 +13,7 @@ PID_FILE=$PID_DIR/maxwell.pid
 
 
 # Maxwell 节点（通常只需要 1 台）
-MAXWELL_NODES=(centos-201)
+MAXWELL_NODES=(centos-101)
 
 SSH_CMD="ssh -o StrictHostKeyChecking=no"
 
@@ -167,14 +167,14 @@ setup_maxwell() {
 # Maxwell 配置文件
 
 # MySQL 配置
-mysql_host=centos-201
+mysql_host=centos-101
 mysql_user=maxwell
 mysql_password=maxwell
 mysql_port=3306
 
 # Kafka 配置
 producer=kafka
-kafka.bootstrap.servers=centos-201:9092,centos-202:9092,centos-203:9092
+kafka.bootstrap.servers=centos-101:9092,centos-102:9092,centos-103:9092
 kafka_topic=maxwell
 
 # 其他配置

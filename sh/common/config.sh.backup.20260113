@@ -28,7 +28,7 @@ export HDFS_CHECKPOINT_DIR=("$MODULE_BASE/hadoop/namesecondary")
 export YARN_NODEMANAGER_DIR=("$MODULE_BASE/hadoop/nodemanager")
 
 # Hadoop进程用户
-export HADOOP_USER="vagrant"
+export HADOOP_USER="hadoop"
 
 # Zookeeper配置
 export ZK_DATA_DIR="$MODULE_BASE/zookeeper/data"

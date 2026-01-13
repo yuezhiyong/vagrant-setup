@@ -41,7 +41,7 @@ usage() {
   $0 start all
 
   $0 start my-agent /opt/flume/conf/my-agent.conf
-  $0 start my-agent /opt/flume/conf/my-agent.conf centos-202
+  $0 start my-agent /opt/flume/conf/my-agent.conf centos-102
 
 EOF
 }

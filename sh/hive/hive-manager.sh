@@ -17,7 +17,7 @@ PID_FILE=$PID_DIR/hive-metastore.pid
 HADOOP_HOME="/opt/module/hadoop"
 JAVA_HOME="/opt/module/java"
 
-MYSQL_HOST="centos-201"
+MYSQL_HOST="centos-101"
 MYSQL_PORT="3306"
 MYSQL_DB="hive"
 MYSQL_USER="hive"
