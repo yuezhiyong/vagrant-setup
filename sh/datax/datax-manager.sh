@@ -110,12 +110,79 @@ status_datax() {
     fi
 }
 
+# 配置 DataX 集群环境
+setup_datax() {
+    print_info "配置 DataX 集群环境..."
+    
+    # 检查 DataX 是否已安装
+    if [ ! -d "$DATAX_HOME" ]; then
+        print_error "DataX 未安装，请先安装 DataX 到 $DATAX_HOME"
+        exit 1
+    fi
+    
+    # 创建日志目录
+    mkdir -p "$DEFAULT_LOG_DIR"
+    
+    # 检查 Python 环境
+    check_python
+    
+    # 创建示例配置文件
+    mkdir -p "$DATAX_HOME/job"
+    
+    # 创建示例作业配置
+    cat > "$DATAX_HOME/job/sample-job.json" <<EOF
+{
+    "job": {
+        "setting": {
+            "speed": {
+                "channel": 1
+            },
+            "errorLimit": {
+                "record": 0,
+                "percentage": 0.02
+            }
+        },
+        "content": [
+            {
+                "reader": {
+                    "name": "streamreader",
+                    "parameter": {
+                        "sliceRecordCount": 10,
+                        "column": [
+                            {
+                                "value": "DataX On Spark",
+                                "type": "string"
+                            },
+                            {
+                                "value": 1988,
+                                "type": "long"
+                            }
+                        ]
+                    }
+                },
+                "writer": {
+                    "name": "streamwriter",
+                    "parameter": {
+                        "print": true
+                    }
+                }
+            }
+        ]
+    }
+}
+EOF
+
+    print_info "DataX 配置完成"
+    print_info "示例作业文件已创建: $DATAX_HOME/job/sample-job.json"
+    print_info "可以使用以下命令测试: $0 start $DATAX_HOME/job/sample-job.json"
+}
+
 # 主入口
 case "$1" in
     start)
         if [ -z "$2" ]; then
             print_error "请指定 Job JSON 文件"
-            echo "用法: $0 start <jobJson> [logDir] [Xms] [Xmx]"
+            echo "用法: $0 start <jobJson> [logDir] [Xms] [Xmx]|setup"
             exit 1
         fi
         start_datax "$2" "$3" "$4" "$5"
@@ -126,8 +193,11 @@ case "$1" in
     status)
         status_datax
         ;;
+    setup)
+        setup_datax
+        ;;
     *)
-        echo "用法: $0 {start <jobJson> [logDir] [Xms] [Xmx]|stop|status}"
+        echo "用法: $0 {start <jobJson> [logDir] [Xms] [Xmx]|stop|status|setup}"
         exit 1
         ;;
 esac

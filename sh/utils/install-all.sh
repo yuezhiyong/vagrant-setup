@@ -29,6 +29,9 @@ declare -A COMPONENTS=(
     ["zookeeper"]="apache-zookeeper-3.*.tar.gz"
     ["kafka"]="kafka_2.*.tgz"
     ["flume"]="apache-flume-1.*-bin.tar.gz"
+    ["hive"]="apache-hive-*.tar.gz"
+    ["datax"]="datax.tar.gz"
+    ["maxwell"]="maxwell-*.tar.gz"
 )
 
 # 期望的安装路径
@@ -38,6 +41,9 @@ declare -A TARGET_PATHS=(
     ["zookeeper"]="$MODULE_BASE/zookeeper"
     ["kafka"]="$MODULE_BASE/kafka"
     ["flume"]="$MODULE_BASE/flume"
+    ["hive"]="$MODULE_BASE/hive"
+    ["datax"]="$MODULE_BASE/datax"
+    ["maxwell"]="$MODULE_BASE/maxwell"
 )
 
 print_install_banner() {
@@ -412,6 +418,81 @@ EOF
     return 0
 }
 
+setup_hive_config() {
+    print_step "配置Hive"
+    
+    # 检查Hive是否安装
+    local hive_home=$(ssh $MASTER_NODE "ls -d $MODULE_BASE/hive* 2>/dev/null | head -1")
+    if [ -z "$hive_home" ]; then
+        print_warning "未找到Hive安装，跳过配置"
+        return 0
+    fi
+    
+    export HIVE_HOME="$hive_home"
+    
+    # 使用hive-manager.sh的配置功能
+    print_info "使用hive-manager.sh配置Hive..."
+    bash $SCRIPTS_BASE/hive/hive-manager.sh setup
+    
+    if [ $? -eq 0 ]; then
+        print_success "Hive配置完成"
+        return 0
+    else
+        print_error "Hive配置失败"
+        return 1
+    fi
+}
+
+setup_datax_config() {
+    print_step "配置DataX"
+    
+    # 检查DataX是否安装
+    local datax_home=$(ssh $MASTER_NODE "ls -d $MODULE_BASE/datax* 2>/dev/null | head -1")
+    if [ -z "$datax_home" ]; then
+        print_warning "未找到DataX安装，跳过配置"
+        return 0
+    fi
+    
+    export DATAX_HOME="$datax_home"
+    
+    # 使用datax-manager.sh的配置功能
+    print_info "使用datax-manager.sh配置DataX..."
+    bash $SCRIPTS_BASE/datax/datax-manager.sh setup
+    
+    if [ $? -eq 0 ]; then
+        print_success "DataX配置完成"
+        return 0
+    else
+        print_error "DataX配置失败"
+        return 1
+    fi
+}
+
+setup_maxwell_config() {
+    print_step "配置Maxwell"
+    
+    # 检查Maxwell是否安装
+    local maxwell_home=$(ssh $MASTER_NODE "ls -d $MODULE_BASE/maxwell* 2>/dev/null | head -1")
+    if [ -z "$maxwell_home" ]; then
+        print_warning "未找到Maxwell安装，跳过配置"
+        return 0
+    fi
+    
+    export MAXWELL_HOME="$maxwell_home"
+    
+    # 使用maxwell-manager.sh的配置功能
+    print_info "使用maxwell-manager.sh配置Maxwell..."
+    bash $SCRIPTS_BASE/maxwell/maxwell-manager.sh setup
+    
+    if [ $? -eq 0 ]; then
+        print_success "Maxwell配置完成"
+        return 0
+    else
+        print_error "Maxwell配置失败"
+        return 1
+    fi
+}
+
 setup_environment_variables() {
     print_step "设置环境变量"
     
@@ -678,8 +759,8 @@ install_all_components() {
     # 4. 安装组件
     print_step "安装组件"
     
-    # 安装顺序很重要：Java -> Zookeeper -> Hadoop -> Kafka -> Flume
-    local components=("jdk" "zookeeper" "hadoop" "kafka" "flume")
+    # 安装顺序很重要：Java -> Zookeeper -> Hadoop -> Kafka -> Flume -> Hive -> DataX -> Maxwell
+    local components=("jdk" "zookeeper" "hadoop" "kafka" "flume" "hive" "datax" "maxwell")
     
     for component in "${components[@]}"; do
         install_component $component || {
@@ -709,6 +790,18 @@ install_all_components() {
     
     setup_flume_config || {
         print_warning "Flume配置失败，可能需要手动配置"
+    }
+    
+    setup_hive_config || {
+        print_warning "Hive配置失败，可能需要手动配置"
+    }
+    
+    setup_datax_config || {
+        print_warning "DataX配置失败，可能需要手动配置"
+    }
+    
+    setup_maxwell_config || {
+        print_warning "Maxwell配置失败，可能需要手动配置"
     }
     
     # 7. 设置环境变量
@@ -750,7 +843,7 @@ case "$1" in
         
     "components")
         print_step "安装所有组件"
-        for component in jdk zookeeper hadoop kafka flume; do
+        for component in jdk zookeeper hadoop kafka flume hive datax maxwell; do
             install_component $component
         done
         ;;
@@ -762,6 +855,9 @@ case "$1" in
         setup_zookeeper_config
         setup_kafka_config
         setup_flume_config
+        setup_hive_config
+        setup_datax_config
+        setup_maxwell_config
         setup_environment_variables
         ;;
         

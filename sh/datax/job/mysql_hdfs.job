@@ -1,0 +1,102 @@
+{
+    "job":
+    {
+        "setting":
+        {
+            "speed":
+            {
+                "channel": 5
+            },
+            "errorLimit":
+            {
+                "record": 1000,
+                "percentage": 0.05
+            }
+        },
+        "content":
+        [
+            {
+                "reader":
+                {
+                    "name": "mysqlreader",
+                    "parameter":
+                    {
+                        "username": "root",
+                        "password": "000000",
+                        "column":
+                        [
+                            "*"
+                        ],
+                        "splitPk": "id",
+                        "where": "id>=3",
+                        "connection":
+                        [
+                            {
+                                "table":
+                                [
+                                    "base_province"
+                                ],
+                                "jdbcUrl":
+                                [
+                                    "jdbc:mysql://centos-201:3306/gmall?useUnicode=true&characterEncoding=utf8&useSSL=false&rewriteBatchedStatements=true&serverTimezone=Asia/Shanghai"
+                                ]
+                            }
+                        ],
+                        "fetchSize": 2048,
+                        "queryTimeout": 3600
+                    }
+                },
+                "writer":
+                {
+                    "name": "hdfswriter",
+                    "parameter":
+                    {
+                        "defaultFS": "hdfs://centos-201",
+                        "fileType": "orc",
+                        "path": "/data_warehouse/ods/base_province_full",
+                        "fileName": "${table}",
+                        "column":
+                        [
+                            {
+                                "name": "id",
+                                "type": "BIGINT"
+                            },
+                            {
+                                "name": "name",
+                                "type": "STRING"
+                            },
+                            {
+                                "name": "region_id",
+                                "type": "STRING"
+                            },
+                            {
+                                "name": "area_code",
+                                "type": "STRING"
+                            },
+                            {
+                                "name": "iso_code",
+                                "type": "STRING"
+                            },
+                            {
+                                "name": "iso_3361_2",
+                                "type": "STRING"
+                            },
+                            {
+                                "name": "create_time",
+                                "type": "STRING"
+                            },
+                            {
+                                "name": "operate_time",
+                                "type": "STRING"
+                            }
+                        ],
+                        "writeMode": "nonConflict",
+                        "fieldDelimiter": "\t",
+                        "compress": "SNAPPY",
+                        "encoding": "UTF-8"
+                    }
+                }
+            }
+        ]
+    }
+}
