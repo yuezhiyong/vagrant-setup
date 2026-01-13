@@ -1,0 +1,10 @@
+org\example\flume\interceptor\JsonInterceptor$Constants.class
+org\example\flume\interceptor\JsonNoOpsSerializer.class
+org\example\flume\interceptor\JsonDateTimeInterceptor.class
+org\example\flume\interceptor\JsonInterceptor.class
+org\example\flume\interceptor\JsonValidateInterceptor.class
+org\example\flume\interceptor\JsonInterceptorSerializer.class
+org\example\flume\interceptor\JsonValidateInterceptor$1.class
+org\example\flume\interceptor\JsonMillsFormatSerializer.class
+org\example\flume\interceptor\JsonInterceptor$Builder.class
+org\example\flume\interceptor\JsonValidateInterceptor$Builder.class
