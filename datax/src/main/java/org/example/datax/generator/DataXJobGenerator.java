@@ -112,7 +112,7 @@ public class DataXJobGenerator {
             template.process(data, writer);
         }
 
-        System.out.println("生成 DataX Job 配置文件: " + outFile.getAbsolutePath());
+        System.out.println("Generated dataX job file at: " + outFile.getAbsolutePath());
     }
 
     /**

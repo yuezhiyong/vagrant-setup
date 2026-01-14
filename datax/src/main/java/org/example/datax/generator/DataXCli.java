@@ -27,5 +27,6 @@ public class DataXCli {
         }
         DataXJobGenerator generator = new DataXJobGenerator(jdbcUrl, user, password, outputDir);
         generator.generate(dbName, tableName);
+        System.out.println("Job success!");
     }
 }
