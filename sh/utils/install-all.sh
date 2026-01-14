@@ -448,6 +448,9 @@ setup_environment_variables() {
     local zk_home=$(ssh $MASTER_NODE "ls -d $MODULE_BASE/zookeeper* 2>/dev/null | head -1")
     local kafka_home=$(ssh $MASTER_NODE "ls -d $MODULE_BASE/kafka* 2>/dev/null | head -1")
     local flume_home=$(ssh $MASTER_NODE "ls -d $MODULE_BASE/flume* 2>/dev/null | head -1")
+    local hive_home=$(ssh $MASTER_NODE "ls -d $MODULE_BASE/hive* 2>/dev/null | head -1")
+    local datax_home=$(ssh $MASTER_NODE "ls -d $MODULE_BASE/datax* 2>/dev/null | head -1")
+    local maxwell_home=$(ssh $MASTER_NODE "ls -d $MODULE_BASE/maxwell* 2>/dev/null | head -1")
     
     local bashrc_content="
 # ============================================
@@ -474,20 +477,32 @@ export PATH=\$PATH:\$KAFKA_HOME/bin
 export FLUME_HOME=${flume_home:-$MODULE_BASE/flume}
 export PATH=\$PATH:\$FLUME_HOME/bin
 
+# Hive环境
+export HIVE_HOME=${hive_home:-$MODULE_BASE/hive}
+export PATH=\$PATH:\$HIVE_HOME/bin:\$HIVE_HOME/bin
+
+# DataX环境
+export DATAX_HOME=${datax_home:-$MODULE_BASE/datax}
+export PATH=\$PATH:\$DATAX_HOME/bin
+
+# Maxwell环境
+export MAXWELL_HOME=${maxwell_home:-$MODULE_BASE/maxwell}
+export PATH=\$PATH:\$MAXWELL_HOME/bin
+
 # Hadoop进程用户
-export HDFS_NAMENODE_USER=vagrant
-export HDFS_DATANODE_USER=vagrant
-export HDFS_SECONDARYNAMENODE_USER=vagrant
-export YARN_RESOURCEMANAGER_USER=vagrant
-export YARN_NODEMANAGER_USER=vagrant
+export HDFS_NAMENODE_USER=$HDFS_NAMENODE_USER
+export HDFS_DATANODE_USER=$HDFS_DATANODE_USER
+export HDFS_SECONDARYNAMENODE_USER=$HDFS_SECONDARYNAMENODE_USER
+export YARN_RESOURCEMANAGER_USER=$YARN_RESOURCEMANAGER_USER
+export YARN_NODEMANAGER_USER=$YARN_NODEMANAGER_USER
 
 # 常用别名
-alias hstart='$SCRIPTS_BASE/hadoop/hadoop-start.sh start'
-alias hstop='$SCRIPTS_BASE/hadoop/hadoop-start.sh stop'
+alias hstart='$SCRIPTS_BASE/hadoop/hadoop-manager.sh start'
+alias hstop='$SCRIPTS_BASE/hadoop/hadoop-manager.sh stop'
 alias kstart='$SCRIPTS_BASE/kafka/kafka-manager.sh start'
 alias kstop='$SCRIPTS_BASE/kafka/kafka-manager.sh stop'
-alias zstart='$SCRIPTS_BASE/kafka/zk-start.sh start'
-alias zstop='$SCRIPTS_BASE/kafka/zk-start.sh stop'
+alias zstart='$SCRIPTS_BASE/zookeeper/zk-manager.sh start'
+alias zstop='$SCRIPTS_BASE/zookeeper/zk-manager.sh stop'
 alias fstart='$SCRIPTS_BASE/flume/flume-manager.sh start'
 alias fstop='$SCRIPTS_BASE/flume/flume-manager.sh stop'
 alias cstart='$SCRIPTS_BASE/cluster/start-all.sh'
@@ -520,6 +535,9 @@ alias cstatus='$SCRIPTS_BASE/cluster/status-all.sh'
     export ZOOKEEPER_HOME="${zk_home:-$MODULE_BASE/zookeeper}"
     export KAFKA_HOME="${kafka_home:-$MODULE_BASE/kafka}"
     export FLUME_HOME="${flume_home:-$MODULE_BASE/flume}"
+    export HIVE_HOME="${hive_home:-$MODULE_BASE/hive}"
+    export DATAX_HOME="${datax_home:-$MODULE_BASE/datax}"
+    export MAXWELL_HOME="${maxwell_home:-$MODULE_BASE/maxwell}"
     
     # 更新配置文件
     update_config_file

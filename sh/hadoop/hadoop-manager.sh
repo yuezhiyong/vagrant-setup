@@ -41,7 +41,7 @@ format_namenode() {
     fi
 
     run_on_host "$MASTER_NODE" \
-        "export HDFS_NAMENODE_USER=$HADOOP_USER && export HDFS_DATANODE_USER=$HADOOP_USER && export HDFS_SECONDARYNAMENODE_USER=$HADOOP_USER && export HADOOP_ALLOW_ROOT=true && $HADOOP_HOME/bin/hdfs namenode -format -force"
+        "export HDFS_NAMENODE_USER=$HDFS_NAMENODE_USER && export HDFS_DATANODE_USER=$HDFS_DATANODE_USER && export HDFS_SECONDARYNAMENODE_USER=$HDFS_SECONDARYNAMENODE_USER && export HADOOP_ALLOW_ROOT=true && $HADOOP_HOME/bin/hdfs namenode -format -force"
 }
 
 start_hdfs() {
@@ -52,14 +52,14 @@ start_hdfs() {
     fi
 
     print_info "执行 start-dfs.sh"
-    run_on_host "$MASTER_NODE" "export HDFS_NAMENODE_USER=$HADOOP_USER && export HDFS_DATANODE_USER=$HADOOP_USER && export HDFS_SECONDARYNAMENODE_USER=$HADOOP_USER && export HADOOP_ALLOW_ROOT=true && $HADOOP_HOME/sbin/start-dfs.sh"
+    run_on_host "$MASTER_NODE" "export HDFS_NAMENODE_USER=$HDFS_NAMENODE_USER && export HDFS_DATANODE_USER=$HDFS_DATANODE_USER && export HDFS_SECONDARYNAMENODE_USER=$HDFS_SECONDARYNAMENODE_USER && export HADOOP_ALLOW_ROOT=true && $HADOOP_HOME/sbin/start-dfs.sh"
 
     sleep 5
 }
 
 stop_hdfs() {
     print_step "停止 HDFS"
-    run_on_host "$MASTER_NODE" "export HDFS_NAMENODE_USER=$HADOOP_USER && export HDFS_DATANODE_USER=$HADOOP_USER && export HDFS_SECONDARYNAMENODE_USER=$HADOOP_USER && export HADOOP_ALLOW_ROOT=true && $HADOOP_HOME/sbin/stop-dfs.sh"
+    run_on_host "$MASTER_NODE" "export HDFS_NAMENODE_USER=$HDFS_NAMENODE_USER && export HDFS_DATANODE_USER=$HDFS_DATANODE_USER && export HDFS_SECONDARYNAMENODE_USER=$HDFS_SECONDARYNAMENODE_USER && export HADOOP_ALLOW_ROOT=true && $HADOOP_HOME/sbin/stop-dfs.sh"
 }
 
 # ---------- YARN ----------
@@ -77,12 +77,12 @@ start_yarn() {
         print_info "在 $host 启动 YARN 服务..."
         if [ "$host" = "$RESOURCE_MANAGER_NODE" ]; then
             # 启动 ResourceManager
-            run_on_host "$host" "export YARN_RESOURCEMANAGER_USER=$HADOOP_USER && export YARN_NODEMANAGER_USER=$HADOOP_USER && export HADOOP_ALLOW_ROOT=true && $HADOOP_HOME/sbin/yarn-daemon.sh start resourcemanager"
+            run_on_host "$host" "export YARN_RESOURCEMANAGER_USER=$YARN_RESOURCEMANAGER_USER && export YARN_NODEMANAGER_USER=$YARN_NODEMANAGER_USER && export HADOOP_ALLOW_ROOT=true && $HADOOP_HOME/sbin/yarn-daemon.sh start resourcemanager"
             print_success "$host: ResourceManager 已启动"
         fi
 
         # 启动 NodeManager
-        run_on_host "$host" "export YARN_RESOURCEMANAGER_USER=$HADOOP_USER && export YARN_NODEMANAGER_USER=$HADOOP_USER && export HADOOP_ALLOW_ROOT=true && $HADOOP_HOME/sbin/yarn-daemon.sh start nodemanager"
+        run_on_host "$host" "export YARN_RESOURCEMANAGER_USER=$YARN_RESOURCEMANAGER_USER && export YARN_NODEMANAGER_USER=$YARN_NODEMANAGER_USER && export HADOOP_ALLOW_ROOT=true && $HADOOP_HOME/sbin/yarn-daemon.sh start nodemanager"
         print_success "$host: NodeManager 已启动"
 
         sleep 1
@@ -101,11 +101,11 @@ stop_yarn() {
 
     for host in "${CLUSTER_HOSTS[@]}"; do
         print_info "停止 $host 的 NodeManager..."
-        run_on_host "$host" "export YARN_RESOURCEMANAGER_USER=$HADOOP_USER && export YARN_NODEMANAGER_USER=$HADOOP_USER && export HADOOP_ALLOW_ROOT=true && $HADOOP_HOME/sbin/yarn-daemon.sh stop nodemanager" || true
+        run_on_host "$host" "export YARN_RESOURCEMANAGER_USER=$YARN_RESOURCEMANAGER_USER && export YARN_NODEMANAGER_USER=$YARN_NODEMANAGER_USER && export HADOOP_ALLOW_ROOT=true && $HADOOP_HOME/sbin/yarn-daemon.sh stop nodemanager" || true
 
         if [ "$host" = "$RESOURCE_MANAGER_NODE" ]; then
             print_info "停止 $host 的 ResourceManager..."
-            run_on_host "$host" "export YARN_RESOURCEMANAGER_USER=$HADOOP_USER && export YARN_NODEMANAGER_USER=$HADOOP_USER && export HADOOP_ALLOW_ROOT=true && $HADOOP_HOME/sbin/yarn-daemon.sh stop resourcemanager" || true
+            run_on_host "$host" "export YARN_RESOURCEMANAGER_USER=$YARN_RESOURCEMANAGER_USER && export YARN_NODEMANAGER_USER=$YARN_NODEMANAGER_USER && export HADOOP_ALLOW_ROOT=true && $HADOOP_HOME/sbin/yarn-daemon.sh stop resourcemanager" || true
         fi
 
         sleep 1
@@ -128,7 +128,7 @@ check_hdfs_status() {
 
     print_info "DataNode 状态:"
     run_on_host "$MASTER_NODE" \
-        "export HDFS_NAMENODE_USER=$HADOOP_USER && export HDFS_DATANODE_USER=$HADOOP_USER && export HDFS_SECONDARYNAMENODE_USER=$HADOOP_USER && export HADOOP_ALLOW_ROOT=true && $HADOOP_HOME/bin/hdfs dfsadmin -report" | \
+        "export HDFS_NAMENODE_USER=$HDFS_NAMENODE_USER && export HDFS_DATANODE_USER=$HDFS_DATANODE_USER && export HDFS_SECONDARYNAMENODE_USER=$HDFS_SECONDARYNAMENODE_USER && export HADOOP_ALLOW_ROOT=true && $HADOOP_HOME/bin/hdfs dfsadmin -report" | \
         awk '
         /Live datanodes/ {print}
         /Hostname:/ {host=$2}
@@ -140,10 +140,10 @@ check_yarn_status() {
     print_step "YARN 状态（安全判活）"
 
     if run_on_host "$YARN_NODE" \
-        "export YARN_RESOURCEMANAGER_USER=$HADOOP_USER && export YARN_NODEMANAGER_USER=$HADOOP_USER && export HADOOP_ALLOW_ROOT=true && timeout 5s $HADOOP_HOME/bin/yarn node -list >/dev/null 2>&1"; then
+        "export YARN_RESOURCEMANAGER_USER=$YARN_RESOURCEMANAGER_USER && export YARN_NODEMANAGER_USER=$YARN_NODEMANAGER_USER && export HADOOP_ALLOW_ROOT=true && timeout 5s $HADOOP_HOME/bin/yarn node -list >/dev/null 2>&1"; then
         print_success "YARN: 可用"
         run_on_host "$YARN_NODE" \
-            "export YARN_RESOURCEMANAGER_USER=$HADOOP_USER && export YARN_NODEMANAGER_USER=$HADOOP_USER && export HADOOP_ALLOW_ROOT=true && timeout 5s $HADOOP_HOME/bin/yarn node -list"
+            "export YARN_RESOURCEMANAGER_USER=$YARN_RESOURCEMANAGER_USER && export YARN_NODEMANAGER_USER=$YARN_NODEMANAGER_USER && export HADOOP_ALLOW_ROOT=true && timeout 5s $HADOOP_HOME/bin/yarn node -list"
     else
         print_error "YARN: 不可用（RM 未就绪或连接超时）"
     fi
@@ -327,20 +327,22 @@ EOF
     
     # 更新hadoop-env.sh配置
     print_info "更新Hadoop环境配置..."
+
     for host in "${CLUSTER_HOSTS[@]}"; do
-        # Ensure HADOOP_ALLOW_ROOT is set
-        run_on_host $host "grep -q 'export HADOOP_ALLOW_ROOT=' $hadoop_conf_dir/hadoop-env.sh 2>/dev/null || echo 'export HADOOP_ALLOW_ROOT=true' >> $hadoop_conf_dir/hadoop-env.sh"
-        # Ensure HDFS user variables are set and uncomment any existing commented lines
-        run_on_host $host "sed -i 's/# export HDFS_NAMENODE_USER=/export HDFS_NAMENODE_USER=/g' $hadoop_conf_dir/hadoop-env.sh 2>/dev/null || true"
-        run_on_host $host "grep -q 'export HDFS_NAMENODE_USER=' $hadoop_conf_dir/hadoop-env.sh 2>/dev/null || echo 'export HDFS_NAMENODE_USER=vagrant' >> $hadoop_conf_dir/hadoop-env.sh"
-        run_on_host $host "sed -i 's/# export HDFS_DATANODE_USER=/export HDFS_DATANODE_USER=/g' $hadoop_conf_dir/hadoop-env.sh 2>/dev/null || true"
-        run_on_host $host "grep -q 'export HDFS_DATANODE_USER=' $hadoop_conf_dir/hadoop-env.sh 2>/dev/null || echo 'export HDFS_DATANODE_USER=vagrant' >> $hadoop_conf_dir/hadoop-env.sh"
-        run_on_host $host "sed -i 's/# export HDFS_SECONDARYNAMENODE_USER=/export HDFS_SECONDARYNAMENODE_USER=/g' $hadoop_conf_dir/hadoop-env.sh 2>/dev/null || true"
-        run_on_host $host "grep -q 'export HDFS_SECONDARYNAMENODE_USER=' $hadoop_conf_dir/hadoop-env.sh 2>/dev/null || echo 'export HDFS_SECONDARYNAMENODE_USER=vagrant' >> $hadoop_conf_dir/hadoop-env.sh"
-        
-        # 为YARN设置用户环境变量
-        run_on_host $host "grep -q 'export YARN_RESOURCEMANAGER_USER=' $hadoop_conf_dir/yarn-env.sh 2>/dev/null || echo 'export YARN_RESOURCEMANAGER_USER=vagrant' >> $hadoop_conf_dir/yarn-env.sh"
-        run_on_host $host "grep -q 'export YARN_NODEMANAGER_USER=' $hadoop_conf_dir/yarn-env.sh 2>/dev/null || echo 'export YARN_NODEMANAGER_USER=vagrant' >> $hadoop_conf_dir/yarn-env.sh"
+    run_on_host "$host" "
+        conf=$HADOOP_HOME/etc/hadoop/hadoop-env.sh
+
+        grep -q '^export HADOOP_ALLOW_ROOT=' \$conf \
+        || echo 'export HADOOP_ALLOW_ROOT=true' >> \$conf
+
+        grep -q '^export HDFS_NAMENODE_USER=' \$conf \
+        && sed -i 's|^export HDFS_NAMENODE_USER=.*|export HDFS_NAMENODE_USER=$HDFS_NAMENODE_USER|' \$conf \
+        || echo 'export HDFS_NAMENODE_USER=$HDFS_NAMENODE_USER' >> \$conf
+
+        grep -q '^export HDFS_DATANODE_USER=' \$conf \
+        && sed -i 's|^export HDFS_DATANODE_USER=.*|export HDFS_DATANODE_USER=$HDFS_DATANODE_USER|' \$conf \
+        || echo 'export HDFS_DATANODE_USER=$HDFS_DATANODE_USER' >> \$conf
+    "
     done
     
     print_success "Hadoop集群配置完成"
@@ -349,12 +351,12 @@ EOF
 
 is_hdfs_available() {
     run_on_host "$MASTER_NODE" \
-        "export HDFS_NAMENODE_USER=$HADOOP_USER && export HDFS_DATANODE_USER=$HADOOP_USER && export HDFS_SECONDARYNAMENODE_USER=$HADOOP_USER && export HADOOP_ALLOW_ROOT=true && $HADOOP_HOME/bin/hdfs dfs -ls / >/dev/null 2>&1"
+        "export HDFS_NAMENODE_USER=$HDFS_NAMENODE_USER && export HDFS_DATANODE_USER=$HDFS_DATANODE_USER && export HDFS_SECONDARYNAMENODE_USER=$HDFS_SECONDARYNAMENODE_USER && export HADOOP_ALLOW_ROOT=true && $HADOOP_HOME/bin/hdfs dfs -ls / >/dev/null 2>&1"
 }
 
 get_datanode_status() {
     run_on_host "$MASTER_NODE" \
-        "export HDFS_NAMENODE_USER=$HADOOP_USER && export HDFS_DATANODE_USER=$HADOOP_USER && export HDFS_SECONDARYNAMENODE_USER=$HADOOP_USER && export HADOOP_ALLOW_ROOT=true && $HADOOP_HOME/bin/hdfs dfsadmin -report 2>/dev/null"
+        "export HDFS_NAMENODE_USER=$HDFS_NAMENODE_USER && export HDFS_DATANODE_USER=$HDFS_DATANODE_USER && export HDFS_SECONDARYNAMENODE_USER=$HDFS_SECONDARYNAMENODE_USER && export HADOOP_ALLOW_ROOT=true && $HADOOP_HOME/bin/hdfs dfsadmin -report 2>/dev/null"
 }
 
 # ---------- 命令入口 ----------

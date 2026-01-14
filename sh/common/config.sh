@@ -27,9 +27,6 @@ export HDFS_DATA_DIR=("$MODULE_BASE/hadoop/data")
 export HDFS_CHECKPOINT_DIR=("$MODULE_BASE/hadoop/namesecondary")
 export YARN_NODEMANAGER_DIR=("$MODULE_BASE/hadoop/nodemanager")
 
-# Hadoop进程用户
-export HADOOP_USER="hdfs"
-
 # Zookeeper配置
 export ZK_DATA_DIR="$MODULE_BASE/zookeeper/data"
 export ZK_LOG_DIR="$MODULE_BASE/zookeeper/logs"
@@ -54,6 +51,22 @@ export SCP_CMD="scp $SSH_OPTS"
 # 日志配置
 export LOG_DIR="$MODULE_BASE/logs"
 mkdir -p $LOG_DIR
+
+# Hadoop进程用户
+export HDFS_NAMENODE_USER=vagrant
+export HDFS_DATANODE_USER=vagrant
+export HDFS_SECONDARYNAMENODE_USER=vagrant
+export YARN_RESOURCEMANAGER_USER=vagrant
+export YARN_NODEMANAGER_USER=vagrant
+
+# Hive配置
+export HIVE_HOME="/opt/module/hive"
+
+# DataX配置
+export DATAX_HOME="/opt/module/datax"
+
+# Maxwell配置
+export MAXWELL_HOME="/opt/module/maxwell"
 
 # 创建必要的目录
 create_directories() {
