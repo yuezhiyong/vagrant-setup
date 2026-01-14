@@ -50,7 +50,10 @@
                     }<#if c_has_next>,</#if>
                   </#list>
                   ],
-                  "writeMode": "append"
+                  "writeMode": "nonConflict",
+                  "fieldDelimiter": "\t",
+                  "compress": "SNAPPY",
+                  "encoding": "UTF-8"
                 }
               }
             }
