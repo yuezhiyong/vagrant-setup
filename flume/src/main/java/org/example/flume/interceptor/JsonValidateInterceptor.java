@@ -4,7 +4,6 @@ import com.google.gson.Gson;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.reflect.TypeToken;
-import jdk.internal.net.http.common.Pair;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.flume.Context;
 import org.apache.flume.Event;
@@ -31,8 +30,8 @@ public class JsonValidateInterceptor implements Interceptor {
         Map<String, String> headers = event.getHeaders();
         String log = new String(event.getBody(), StandardCharsets.UTF_8);
         Pair<String, Boolean> headerPair = hasHeaderTs(log);
-        if (headerPair.second) {
-            String ts = headerPair.first;
+        if (headerPair.getSecond()) {
+            String ts = headerPair.getFirst();
             headers.put("timestamp", ts);
         }
         return null;
@@ -61,7 +60,7 @@ public class JsonValidateInterceptor implements Interceptor {
         for (Event event : list) {
             String body = new String(event.getBody());
             Pair<String, Boolean> has = hasHeaderTs(body);
-            if (!has.second) {
+            if (!has.getSecond()) {
                 LOGGER.warn("当前事件不准确:{}", body);
                 continue;
             }
