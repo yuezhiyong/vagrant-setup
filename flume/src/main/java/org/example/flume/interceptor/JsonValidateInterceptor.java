@@ -34,7 +34,7 @@ public class JsonValidateInterceptor implements Interceptor {
             String ts = headerPair.getFirst();
             headers.put("timestamp", ts);
         }
-        return null;
+        return event;
     }
 
     private Pair<String, Boolean> hasHeaderTs(String body) {
