@@ -28,6 +28,57 @@ print_error() {
     echo -e "[ERROR] $*" >&2
 }
 
+# 显示帮助信息
+show_help() {
+    echo "DataX 管理脚本 - 用法说明"
+    echo ""
+    echo "命令格式: $0 {start|stop|status|setup|generate|run-job|help}"
+    echo ""
+    echo "可用命令:"
+    echo "  start <jobJson> [logDir] [Xms] [Xmx]"
+    echo "        启动 DataX 任务"
+    echo "        jobJson: Job JSON 配置文件路径"
+    echo "        logDir:  日志目录 (可选，默认: $DEFAULT_LOG_DIR)"
+    echo "        Xms:     JVM 初始内存 (可选，默认: $DEFAULT_XMS)"
+    echo "        Xmx:     JVM 最大内存 (可选，默认: $DEFAULT_XMX)"
+    echo ""
+    echo "  stop"
+    echo "        停止当前运行的 DataX 任务"
+    echo ""
+    echo "  status"
+    echo "        查看 DataX 任务运行状态"
+    echo ""
+    echo "  setup"
+    echo "        配置 DataX 环境，创建示例配置文件"
+    echo ""
+    echo "  generate <jdbcUrl> <username> <password> <database> [tableName] [jobDir]"
+    echo "        生成 DataX 任务配置文件"
+    echo "        jdbcUrl:  JDBC 连接 URL"
+    echo "        username: 数据库用户名"
+    echo "        password: 数据库密码"
+    echo "        database: 数据库名称"
+    echo "        tableName: 表名 (可选，如果不指定则生成整个数据库)"
+    echo "        jobDir:   生成的配置文件存放目录"
+    echo ""
+    echo "  run-job <jobJson> <runDate> [logDir] [Xms] [Xmx]"
+    echo "        执行带日期参数的 DataX 任务"
+    echo "        jobJson: Job JSON 配置文件路径"
+    echo "        runDate: 日期参数，例如 20260114"
+    echo "        logDir:  日志目录 (可选)"
+    echo "        Xms:     JVM 初始内存 (可选，默认: $DEFAULT_XMS)"
+    echo "        Xmx:     JVM 最大内存 (可选，默认: $DEFAULT_XMX)"
+    echo ""
+    echo "  help"
+    echo "        显示此帮助信息"
+    echo ""
+    echo "示例:"
+    echo "  $0 start /path/to/job.json"
+    echo "  $0 start /path/to/job.json /custom/log/dir 256m 512m"
+    echo "  $0 run-job /path/to/job.json 20260114"
+    echo "  $0 run-job /path/to/job.json 20260114 /custom/log/dir 256m 512m"
+    echo "  $0 generate jdbc:mysql://localhost:3306/test user pass test table1 /jobs/"
+}
+
 # 检查 Python
 check_python() {
     if command -v python >/dev/null 2>&1; then
@@ -110,6 +161,131 @@ status_datax() {
     fi
 }
 
+JOB_GEN_JAR="/opt/module/datax/datax-job-generator.jar"
+
+print_info() { echo -e "[INFO] $*"; }
+print_error() { echo -e "[ERROR] $*" >&2; exit 1; }
+
+generate_job() {
+    local jdbc_url=$1
+    local db_user=$2
+    local db_pass=$3
+    local database=$4
+    local tablename=$5
+    local job_dir=$6
+
+    # 参数校验
+    [ -z "$jdbc_url" ] && print_error "JDBC URL 必需"
+    [ -z "$db_user" ] && print_error "DB 用户名必需"
+    [ -z "$db_pass" ] && print_error "DB 密码必需"
+    [ -z "$database" ] && print_error "数据库名必需"
+
+    # 判断是否提供了表名（通过检查第6个参数是否存在来判断）
+    # 如果第6个参数存在，说明第5个参数是tablename，第6个是job_dir
+    # 如果第6个参数不存在，说明第5个参数实际上是job_dir，tablename为空
+    if [ -n "$job_dir" ]; then
+        # 6个参数：指定了tablename
+        [ -z "$job_dir" ] && print_error "Job 输出目录必需"
+    else
+        # 5个参数：没有指定tablename，第5个参数是job_dir
+        job_dir=$5
+        tablename=""
+        [ -z "$job_dir" ] && print_error "Job 输出目录必需"
+    fi
+
+    # 创建输出目录
+    mkdir -p "$job_dir"
+
+    # 构建命令
+    local cmd
+    if [ -z "$tablename" ]; then
+        # 全库生成
+        cmd="java -jar $JOB_GEN_JAR $jdbc_url $db_user $db_pass $database $job_dir"
+    else
+        # 指定表生成
+        cmd="java -jar $JOB_GEN_JAR $jdbc_url $db_user $db_pass $database $tablename $job_dir"
+    fi
+
+    print_info "执行生成命令: $cmd"
+    eval "$cmd"
+    local ret=$?
+    if [ $ret -ne 0 ]; then
+        print_error "生成 DataX job 失败，返回码 $ret"
+    fi
+    print_info "DataX job 生成完成: $job_dir"
+}
+
+# ----------------------------
+# 执行 DataX Job（支持动态日期）
+# 比如 ./datax-manager.sh run ~/datax-test/gmall.activity_info1.json 20260114
+# ----------------------------
+run_datax_job() {
+    local job_json=$1      # 原始 job JSON 文件
+    local run_date=$2      # 日期参数，例如 20260114
+    local log_dir=$3       # 可选日志目录
+    local jvm_xms=$4       # 可选JVM初始内存
+    local jvm_xmx=$5       # 可选JVM最大内存
+    
+    # 设置默认值
+    log_dir=${log_dir:-"$DEFAULT_LOG_DIR"}
+    jvm_xms=${jvm_xms:-$DEFAULT_XMS}
+    jvm_xmx=${jvm_xmx:-$DEFAULT_XMX}
+
+    [ -z "$job_json" ] && print_error "请指定 Job JSON 文件"
+    [ -z "$run_date" ] && print_error "请指定日期参数"
+
+    # 检查 job JSON 文件
+    if [ ! -f "$job_json" ]; then
+        print_error "Job JSON 文件不存在: $job_json"
+    fi
+
+    # 检查 Python
+    check_python
+
+    # 创建日志目录
+    mkdir -p "$log_dir"
+
+    # 临时生成带日期的 job 文件
+    local job_with_date="${job_json%.json}_${run_date}.json"
+    cp "$job_json" "$job_with_date"
+
+    # 替换路径中的 {date} 为实际日期（支持多种日期占位符格式）
+    sed -i "s|\${date}|$run_date|g" "$job_with_date"
+    sed -i "s|{date}|$run_date|g" "$job_with_date"
+    sed -i "s|\${run_date}|$run_date|g" "$job_with_date"
+    sed -i "s|{run_date}|$run_date|g" "$job_with_date"
+
+    # 提取 HDFS 路径，假设 writer.path 一行中包含目标路径
+    local hdfs_path
+    hdfs_path=$(grep -Po '"path"\s*:\s*"\K[^"]+' "$job_with_date" | head -1)
+    if [ -z "$hdfs_path" ]; then
+        print_error "未找到 writer.path 路径"
+    fi
+    print_info "目标 HDFS 路径: $hdfs_path"
+
+    # 检查 HDFS 路径是否存在，如果不存在则创建
+    if ! hdfs dfs -test -d "$hdfs_path"; then
+        print_info "HDFS 目录不存在，创建: $hdfs_path"
+        hdfs dfs -mkdir -p "$hdfs_path"
+    else
+        print_info "HDFS 目录已存在"
+    fi
+
+    # 构建日志文件
+    local log_file="$log_dir/datax_$(basename $job_json .json)_$run_date_$(date +%H%M%S).log"
+    print_info "执行 DataX 任务: $job_with_date"
+    print_info "日志文件: $log_file"
+    print_info "JVM 内存设置: -Xms${jvm_xms} -Xmx${jvm_xmx}"
+
+    # 执行 DataX，添加内存限制参数
+    nohup "$PYTHON_BIN" "$DATAX_HOME/bin/datax.py" -j "-Xms${jvm_xms} -Xmx${jvm_xmx}" "$job_with_date" > "$log_file" 2>&1 &
+
+    local pid=$!
+    echo $pid > "/tmp/datax_${run_date}.pid"
+    print_info "DataX PID: $pid"
+}
+
+
 # 配置 DataX 集群环境
 setup_datax() {
     print_info "配置 DataX 集群环境..."
@@ -177,12 +353,13 @@ EOF
     print_info "可以使用以下命令测试: $0 start $DATAX_HOME/job/sample-job.json"
 }
 
+
 # 主入口
 case "$1" in
     start)
         if [ -z "$2" ]; then
             print_error "请指定 Job JSON 文件"
-            echo "用法: $0 start <jobJson> [logDir] [Xms] [Xmx]|setup"
+            show_help
             exit 1
         fi
         start_datax "$2" "$3" "$4" "$5"
@@ -196,8 +373,27 @@ case "$1" in
     setup)
         setup_datax
         ;;
+    generate)
+        generate_job "$2" "$3" "$4" "$5" "$6" "$7"
+        ;;
+    run-job)
+        if [ -z "$2" ]; then
+            print_error "请指定 Job JSON 文件"
+            show_help
+            exit 1
+        fi
+        if [ -z "$3" ]; then
+            print_error "请指定运行日期"
+            show_help
+            exit 1
+        fi
+        run_datax_job "$2" "$3" "$4" "$5" "$6"
+        ;;
+    help|"")
+        show_help
+        ;;
     *)
-        echo "用法: $0 {start <jobJson> [logDir] [Xms] [Xmx]|stop|status|setup}"
+        show_help
         exit 1
         ;;
 esac
