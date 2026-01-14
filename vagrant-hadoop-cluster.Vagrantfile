@@ -40,11 +40,20 @@ Vagrant.configure("2") do |config|
 
       node.vm.network "private_network",
         ip: "#{CLUSTER_NET}.#{id}"
-
+      node.vm.network 'forwarded_port',
+        guest: 9864,
+        host: 9864,
+        host_ip: "127.0.0.1",
+        auto_correct: true
       if id == MASTER_ID
         node.vm.network "forwarded_port",
           guest: 9870,
           host: 9870,
+          host_ip: "127.0.0.1",
+          auto_correct: true
+        node.vm.network "forwarded_port",
+          guest: 3306,
+          host: 3306,
           host_ip: "127.0.0.1",
           auto_correct: true
       end
