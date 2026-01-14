@@ -48,7 +48,7 @@ public class DataXJobGenerator {
         if (mysqlType.equals("float") || mysqlType.equals("double")) return "double";
         if (mysqlType.contains("decimal") || mysqlType.contains("numeric")) return "decimal";
         if (mysqlType.equals("date")) return "date";
-        if (mysqlType.contains("time") || mysqlType.contains("timestamp")) return "timestamp";
+        if (mysqlType.contains("timestamp")) return "timestamp";
         if (mysqlType.equals("bit")) return "boolean";
         return "string";
     }
