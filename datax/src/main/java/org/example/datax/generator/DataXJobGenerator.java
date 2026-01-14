@@ -120,15 +120,33 @@ public class DataXJobGenerator {
      */
     public void generate(String dbName, String tableName) throws Exception {
         try (Connection conn = DriverManager.getConnection(jdbcUrl, user, password)) {
+            // 检查数据库是否存在
+            List<String> databases = new ArrayList<>();
+            try (ResultSet rs = conn.getMetaData().getCatalogs()) {
+                while (rs.next()) {
+                    databases.add(rs.getString("TABLE_CAT"));
+                }
+            }
+            if (!databases.contains(dbName)) {
+                throw new SQLException("Database does not exist: " + dbName);
+            }
+
             if (tableName == null || tableName.isEmpty()) {
                 // 全库生成
                 List<String> tables = listTables(dbName, conn);
+                if (tables.isEmpty()) {
+                    throw new SQLException("Database " + dbName + " has no tables.");
+                }
                 for (String t : tables) {
                     List<Map<String, String>> cols = getColumns(dbName, t, conn);
                     generateJob(dbName, t, cols);
                 }
             } else {
-                // 单表生成
+                // 单表生成，先检查表是否存在
+                List<String> tables = listTables(dbName, conn);
+                if (!tables.contains(tableName)) {
+                    throw new SQLException("Table does not exist: " + tableName);
+                }
                 List<Map<String, String>> cols = getColumns(dbName, tableName, conn);
                 generateJob(dbName, tableName, cols);
             }
