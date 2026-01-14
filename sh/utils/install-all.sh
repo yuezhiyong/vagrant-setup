@@ -475,11 +475,11 @@ export FLUME_HOME=${flume_home:-$MODULE_BASE/flume}
 export PATH=\$PATH:\$FLUME_HOME/bin
 
 # Hadoop进程用户
-export HDFS_NAMENODE_USER=root
-export HDFS_DATANODE_USER=root
-export HDFS_SECONDARYNAMENODE_USER=root
-export YARN_RESOURCEMANAGER_USER=root
-export YARN_NODEMANAGER_USER=root
+export HDFS_NAMENODE_USER=vagrant
+export HDFS_DATANODE_USER=vagrant
+export HDFS_SECONDARYNAMENODE_USER=vagrant
+export YARN_RESOURCEMANAGER_USER=vagrant
+export YARN_NODEMANAGER_USER=vagrant
 
 # 常用别名
 alias hstart='$SCRIPTS_BASE/hadoop/hadoop-start.sh start'

@@ -4,6 +4,9 @@
 # ============================================
 
 # 注意：$SCRIPTS_BASE需要在调用此脚本前设置好
+unset SCRIPTS_BASE
+SCRIPTS_BASE=$(cd "$(dirname "$0")/.." && pwd)
+echo "common shell ,SCRIPTS_BASE: $SCRIPTS_BASE"
 source $SCRIPTS_BASE/common/color.sh
 
 # 检查命令是否存在
