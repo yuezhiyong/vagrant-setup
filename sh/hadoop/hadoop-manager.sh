@@ -210,7 +210,8 @@ EOF
 <configuration>
         <property>
                 <name>dfs.namenode.http-address</name>
-                <value>$MASTER_NODE:9870</value>
+                <!-- 这里如果需要被其他的外界端口访问到可以设置为0.0.0.0:9870 -->
+                <value>0.0.0.0:9870</value>
         </property>
         <property>
                 <name>dfs.namenode.secondary.http-address</name>
@@ -375,7 +376,7 @@ case "$CMD" in
         stop_yarn
         stop_hdfs
         sleep 3
-        start_hdfs
+        start_hdfs "$SUBCMD"
         start_yarn
         check_all_status
         ;;
