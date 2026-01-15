@@ -12,6 +12,7 @@ echo "SCRIPTS_BASE: $SCRIPTS_BASE"
 
 source $SCRIPTS_BASE/common/color.sh
 source $SCRIPTS_BASE/common/common.sh
+source $SCRIPTS_BASE/common/config.sh
 
 ACTION="${1:-}"
 
@@ -100,7 +101,7 @@ configure_hive() {
 
   <property>
     <name>javax.jdo.option.ConnectionURL</name>
-    <value>jdbc:mysql://${MYSQL_HOST}:${MYSQL_PORT}/${MYSQL_DB}?createDatabaseIfNotExist=true&amp;useSSL=false&amp;serverTimezone=Asia/Shanghai</value>
+    <value>jdbc:mysql://${MYSQL_HOST}:${MYSQL_PORT}/${MYSQL_DB}?createDatabaseIfNotExist=true&amp;useSSL=false&amp;serverTimezone=Asia/Shanghai&amp;allowPublicKeyRetrieval=true</value>
   </property>
 
   <property>
@@ -186,10 +187,68 @@ configure_spark_integration() {
     <name>spark.sql.warehouse.dir</name>\
     <value>/user/hive/warehouse</value>\
     <description>Spark SQL warehouse 目录</description>\
+  </property>
+  <property>
+    <name>spark.yarn.jars</name>
+    <value>${SPARK_YARN_JAR:-$SPARK_HOME/jars/*}</value>
+    <description>Spark YARN jars 路径</description>
+  </property>
+  <!-- Hive on Spark 必配 -->
+  <property>
+    <name>hive.spark.client.connect.timeout</name>
+    <value>100000ms</value>
+  </property>
+  <property>
+    <name>hive.spark.client.server.connect.timeout</name>
+    <value>60000ms</value>
+  </property>
+  <property>
+    <name>hive.spark.client.rpc.threads</name>
+    <value>5</value>
   </property>" "$temp_hive_site"
     else
-        # 如果已有配置，更新 Spark home
+        # 如果已有配置，更新 Spark 相关配置
         sed -i "s|<value>.*</value>|<value>$SPARK_HOME</value>|g" "$temp_hive_site"
+        # 确保 spark.yarn.jars 属性存在
+        if ! grep -q "spark.yarn.jars" "$temp_hive_site"; then
+            sed -i "/<\/configuration>/i\
+  <property>\
+    <name>spark.yarn.jars</name>\
+    <value>${SPARK_YARN_JAR:-$SPARK_HOME/jars/*}</value>\
+    <description>Spark YARN jars 路径</description>\
+  </property>\
+  <!-- Hive on Spark 必配 -->\
+  <property>\
+    <name>hive.spark.client.connect.timeout</name>\
+    <value>10000ms</value>\
+  </property>\
+  <property>\
+    <name>hive.spark.client.server.connect.timeout</name>\
+    <value>30000ms</value>\
+  </property>\
+  <property>\
+    <name>hive.spark.client.rpc.threads</name>\
+    <value>5</value>\
+  </property>" "$temp_hive_site"
+        else
+            # 检查是否已包含 Hive on Spark 必需配置
+            if ! grep -q "hive.spark.client.connect.timeout" "$temp_hive_site"; then
+                sed -i "/<\/configuration>/i\
+  <!-- Hive on Spark 必配 -->\
+  <property>\
+    <name>hive.spark.client.connect.timeout</name>\
+    <value>100000ms</value>\
+  </property>\
+  <property>\
+    <name>hive.spark.client.server.connect.timeout</name>\
+    <value>60000ms</value>\
+  </property>\
+  <property>\
+    <name>hive.spark.client.rpc.threads</name>\
+    <value>5</value>\
+  </property>" "$temp_hive_site"
+            fi
+        fi
     fi
     
     # 替换原来的配置文件
@@ -214,6 +273,13 @@ EOF
         print_info "spark-defaults.conf 已创建"
     else
         print_info "检测到 spark-defaults.conf，配置 Spark 依赖路径..."
+    fi
+    
+    # 如果 Spark 的 spark-defaults.conf 存在，将其复制到 Hive 的 conf 目录下
+    if [ -f "$SPARK_HOME/conf/spark-defaults.conf" ]; then
+        print_info "复制 spark-defaults.conf 到 Hive 配置目录..."
+        cp "$SPARK_HOME/conf/spark-defaults.conf" "$HIVE_HOME/conf/spark-defaults.conf"
+        print_info "spark-defaults.conf 已复制到 Hive 配置目录"
     fi
     
     # 创建或更新 hive-exec-log4j2.properties 以包含 Spark 依赖
@@ -289,6 +355,14 @@ stop_metastore() {
     echo "[WARN] 正常停止失败，强制 kill"
     kill -9 "$pid"
     rm -f "$PID_FILE"
+}
+
+# ---------- restart metastore ----------
+restart_metastore() {
+    print_info "重启 Metastore..."
+    stop_metastore
+    sleep 3
+    start_metastore
 }
 
 # ---------- status ----------
@@ -405,6 +479,9 @@ case "$ACTION" in
     stop)
         stop_metastore
         ;;
+    restart)
+        restart_metastore
+        ;;
     status)
         status_metastore
         ;;
@@ -412,12 +489,12 @@ case "$ACTION" in
         setup_hive
         ;;
     "")
-        echo "用法: $0 {install|init|start|stop|status|setup}"
+        echo "用法: $0 {install|init|start|stop|restart|status|setup}"
         exit 1
         ;;
     *)
         echo "未知命令: $1"
-        echo "用法: $0 {install|init|start|stop|status|setup}"
+        echo "用法: $0 {install|init|start|stop|restart|status|setup}"
         exit 1
         ;;
 esac
