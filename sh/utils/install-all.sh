@@ -14,13 +14,14 @@ export MODULE_BASE="/opt/module"
 ORIG_SCRIPTS_BASE="$SCRIPTS_BASE"
 
 # 加载公共函数库（按依赖顺序）
+source $SCRIPTS_BASE/common/color.sh
+source $SCRIPTS_BASE/common/common.sh
 source $SCRIPTS_BASE/common/config.sh
 
 # 恢复原始的SCRIPTS_BASE值，以确保后续加载的脚本能找到正确位置
 export SCRIPTS_BASE="$ORIG_SCRIPTS_BASE"
 
-source $SCRIPTS_BASE/common/color.sh
-source $SCRIPTS_BASE/common/common.sh
+
 
 # 组件配置
 declare -A COMPONENTS=(
@@ -747,24 +748,24 @@ install_all_components() {
     local components=("jdk" "zookeeper" "hadoop" "kafka" "flume" "hive" "datax" "maxwell" "spark")
     
     for component in "${components[@]}"; do
-        install_component $component || {
+        bash $SCRIPTS_BASE/utils/compont-manager.sh install $component || {
             print_warning "$component 安装失败，继续安装其他组件..."
         }
         sleep 2
     done
     
     # 5. 设置Java环境
-    setup_java || {
+    bash $SCRIPTS_BASE/utils/compont-manager.sh setup java || {
         print_error "Java环境设置失败"
         exit 1
     }
     
     # 6. 配置各个组件
-    setup_hadoop_config || {
+    bash $SCRIPTS_BASE/utils/compont-manager.sh setup hadoop || {
         print_warning "Hadoop配置失败，可能需要手动配置"
     }
     
-    setup_zookeeper_config || {
+    bash $SCRIPTS_BASE/utils/compont-manager.sh setup zookeeper || {
         print_warning "Zookeeper配置失败，可能需要手动配置"
     }
     
@@ -774,28 +775,28 @@ install_all_components() {
         print_warning "Kafka配置失败，可能需要手动配置"
     }
     
-    setup_flume_config || {
+    bash $SCRIPTS_BASE/utils/compont-manager.sh setup flume || {
         print_warning "Flume配置失败，可能需要手动配置"
     }
     
-    setup_hive_config || {
+    bash $SCRIPTS_BASE/utils/compont-manager.sh setup hive || {
         print_warning "Hive配置失败，可能需要手动配置"
     }
     
-    setup_datax_config || {
+    bash $SCRIPTS_BASE/utils/compont-manager.sh setup datax || {
         print_warning "DataX配置失败，可能需要手动配置"
     }
     
-    setup_maxwell_config || {
+    bash $SCRIPTS_BASE/utils/compont-manager.sh setup maxwell || {
         print_warning "Maxwell配置失败，可能需要手动配置"
     }
     
-    setup_spark_config || {
+    bash $SCRIPTS_BASE/utils/compont-manager.sh setup spark || {
         print_warning "Spark配置失败，可能需要手动配置"
     }
     
     # 7. 设置环境变量
-    setup_environment_variables
+    bash $SCRIPTS_BASE/utils/compont-manager.sh setup_env
     
     # 8. 分发脚本
     print_step "分发管理脚本"
@@ -834,24 +835,24 @@ case "$1" in
     "components")
         print_step "安装所有组件"
         for component in jdk zookeeper hadoop kafka flume hive datax maxwell spark; do
-            install_component $component
+            bash $SCRIPTS_BASE/utils/compont-manager.sh install $component
         done
         ;;
         
     "config")
         print_step "配置所有组件"
-        setup_java
-        setup_hadoop_config
-        setup_zookeeper_config
+        bash $SCRIPTS_BASE/utils/compont-manager.sh setup java
+        bash $SCRIPTS_BASE/utils/compont-manager.sh setup hadoop
+        bash $SCRIPTS_BASE/utils/compont-manager.sh setup zookeeper
         # 使用kafka-manager.sh的setup功能来配置Kafka
         print_info "使用kafka-manager.sh配置Kafka集群..."
         bash $SCRIPTS_BASE/kafka/kafka-manager.sh setup
-        setup_flume_config
-        setup_hive_config
-        setup_datax_config
-        setup_maxwell_config
-        setup_spark_config
-        setup_environment_variables
+        bash $SCRIPTS_BASE/utils/compont-manager.sh setup flume
+        bash $SCRIPTS_BASE/utils/compont-manager.sh setup hive
+        bash $SCRIPTS_BASE/utils/compont-manager.sh setup datax
+        bash $SCRIPTS_BASE/utils/compont-manager.sh setup maxwell
+        bash $SCRIPTS_BASE/utils/compont-manager.sh setup spark
+        bash $SCRIPTS_BASE/utils/compont-manager.sh setup_env
         ;;
         
     "ssh")
