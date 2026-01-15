@@ -120,39 +120,8 @@ EOF
 setup_java() {
     print_step "设置Java环境"
     
-    # 查找Java安装
-    local java_dirs=$(ssh $MASTER_NODE "ls -d $MODULE_BASE/java* 2>/dev/null")
-    if [ -z "$java_dirs" ]; then
-        print_error "未找到Java安装"
-        return 1
-    fi
-    
-    local java_home=$(echo "$java_dirs" | head -1)
-    echo "Java Home: $java_home"
-    # 更新环境变量
-    local bashrc_content="
-# Java环境变量
-export JAVA_HOME=$java_home
-export PATH=\$JAVA_HOME/bin:\$PATH
-"
-    
-    # 设置所有节点的Java环境变量
-    for host in "${CLUSTER_HOSTS[@]}"; do
-        print_info "设置 $host Java环境变量..."
-        echo "$bashrc_content" | run_on_host $host "cat >> ~/.bashrc"
-        
-        # 验证Java安装
-        local java_version=$(ssh $host "source ~/.bashrc && java -version 2>&1 | head -1")
-        if [[ $java_version == *"version"* ]]; then
-            print_success "$host: Java $java_version"
-        else
-            print_error "$host: Java验证失败"
-            return 1
-        fi
-    done
-    
-    # 更新配置中的JAVA_HOME
-    export JDK_HOME="$java_home"
+    # Java的设置主要是环境变量，由setup_environment_variables函数统一处理
+    print_info "Java环境变量将由setup_environment_variables统一配置"
     
     return 0
 }
@@ -162,7 +131,7 @@ setup_hadoop_config() {
     
     # 使用hadoop-manager.sh的setup功能来配置Hadoop
     print_info "使用hadoop-manager.sh配置Hadoop集群..."
-    bash $SCRIPTS_BASE/hadoop/hadoop-manager.sh setup
+    bash ../hadoop/hadoop-manager.sh setup
     
     if [ $? -eq 0 ]; then
         print_success "Hadoop集群配置完成"
@@ -176,119 +145,39 @@ setup_hadoop_config() {
 setup_zookeeper_config() {
     print_step "配置Zookeeper"
     
-    local zk_home=$(ssh $MASTER_NODE "ls -d $MODULE_BASE/zookeeper* 2>/dev/null | head -1")
-    if [ -z "$zk_home" ]; then
-        print_error "未找到Zookeeper安装"
+    # 委托给zk-manager.sh的setup功能来配置Zookeeper
+    print_info "使用zk-manager.sh配置Zookeeper集群..."
+    bash $SCRIPTS_BASE/zookeeper/zk-manager.sh setup
+    
+    if [ $? -eq 0 ]; then
+        print_success "Zookeeper集群配置完成"
+        return 0
+    else
+        print_error "Zookeeper集群配置失败"
         return 1
     fi
-    
-    export ZOOKEEPER_HOME="$zk_home"
-    
-    # 创建zoo.cfg配置文件
-    local zoo_cfg="
-# Zookeeper配置
-tickTime=2000
-initLimit=10
-syncLimit=5
-dataDir=$ZK_DATA_DIR
-dataLogDir=$ZK_LOG_DIR
-clientPort=2181
-maxClientCnxns=0
-admin.enableServer=false
-autopurge.snapRetainCount=3
-autopurge.purgeInterval=24
-4lw.commands.whitelist=*
-"
-    
-    # 添加集群配置
-    local id=1
-    for host in "${CLUSTER_HOSTS[@]}"; do
-        zoo_cfg+="server.$id=$host:2888:3888"$'\n'
-        id=$((id + 1))
-    done
-    
-    # 分发配置到所有节点
-    print_info "分发Zookeeper配置文件..."
-    local id=1
-    for host in "${CLUSTER_HOSTS[@]}"; do
-        # 创建数据目录
-        run_on_host $host "mkdir -p $ZK_DATA_DIR $ZK_LOG_DIR"
-        
-        # 设置myid
-        run_on_host $host "echo $id > $ZK_DATA_DIR/myid"
-        
-        # 写入配置文件
-        echo "$zoo_cfg" | run_on_host $host "cat > $ZOOKEEPER_HOME/conf/zoo.cfg"
-        
-        print_success "$host: Zookeeper配置完成 (myid=$id)"
-        id=$((id + 1))
-    done
-    
-    return 0
 }
 
 setup_flume_config() {
     print_step "配置Flume"
     
-    local flume_home=$(ssh $MASTER_NODE "ls -d $MODULE_BASE/flume* 2>/dev/null | head -1")
-    if [ -z "$flume_home" ]; then
-        print_warning "未找到Flume安装，跳过配置"
+    # 委托给flume-manager.sh的setup功能来配置Flume
+    print_info "使用flume-manager.sh配置Flume..."
+    bash $SCRIPTS_BASE/flume/flume-manager.sh setup
+    
+    if [ $? -eq 0 ]; then
+        print_success "Flume配置完成"
         return 0
+    else
+        print_error "Flume配置失败"
+        return 1
     fi
-    
-    export FLUME_HOME="$flume_home"
-    
-    # 创建Flume配置文件目录
-    run_on_cluster "mkdir -p $FLUME_CONF_DIR"
-    
-    # 创建示例配置文件
-    cat > /tmp/flume-kafka.conf << EOF
-# Flume Kafka Sink配置示例
-agent.sources = tail-source
-agent.channels = mem-channel
-agent.sinks = kafka-sink
-
-# Source配置 - 监控日志文件
-agent.sources.tail-source.type = TAILDIR
-agent.sources.tail-source.channels = mem-channel
-agent.sources.tail-source.positionFile = $FLUME_LOG_DIR/taildir_position.json
-agent.sources.tail-source.filegroups = f1
-agent.sources.tail-source.filegroups.f1 = /var/log/.*\.log
-
-# Channel配置
-agent.channels.mem-channel.type = memory
-agent.channels.mem-channel.capacity = 10000
-agent.channels.mem-channel.transactionCapacity = 1000
-
-# Sink配置 - Kafka
-agent.sinks.kafka-sink.type = org.apache.flume.sink.kafka.KafkaSink
-agent.sinks.kafka-sink.channel = mem-channel
-agent.sinks.kafka-sink.kafka.bootstrap.servers = $(printf "%s:9092," "${CLUSTER_HOSTS[@]}" | sed 's/,$//')
-agent.sinks.kafka-sink.kafka.topic = flume-logs
-agent.sinks.kafka-sink.flumeBatchSize = 100
-EOF
-
-    # 分发配置文件
-    distribute_file "/tmp/flume-kafka.conf" "$FLUME_CONF_DIR"
-    rm -f /tmp/flume-kafka.conf
-    
-    print_success "Flume配置完成"
-    return 0
 }
 
 setup_hive_config() {
     print_step "配置Hive"
     
-    # 检查Hive是否安装
-    local hive_home=$(ssh $MASTER_NODE "ls -d $MODULE_BASE/hive* 2>/dev/null | head -1")
-    if [ -z "$hive_home" ]; then
-        print_warning "未找到Hive安装，跳过配置"
-        return 0
-    fi
-    
-    export HIVE_HOME="$hive_home"
-    
-    # 使用hive-manager.sh的配置功能
+    # 委托给hive-manager.sh的setup功能来配置Hive
     print_info "使用hive-manager.sh配置Hive..."
     bash $SCRIPTS_BASE/hive/hive-manager.sh setup
     
@@ -304,16 +193,7 @@ setup_hive_config() {
 setup_datax_config() {
     print_step "配置DataX"
     
-    # 检查DataX是否安装
-    local datax_home=$(ssh $MASTER_NODE "ls -d $MODULE_BASE/datax* 2>/dev/null | head -1")
-    if [ -z "$datax_home" ]; then
-        print_warning "未找到DataX安装，跳过配置"
-        return 0
-    fi
-    
-    export DATAX_HOME="$datax_home"
-    
-    # 使用datax-manager.sh的配置功能
+    # 委托给datax-manager.sh的setup功能来配置DataX
     print_info "使用datax-manager.sh配置DataX..."
     bash $SCRIPTS_BASE/datax/datax-manager.sh setup
     
@@ -329,16 +209,7 @@ setup_datax_config() {
 setup_maxwell_config() {
     print_step "配置Maxwell"
     
-    # 检查Maxwell是否安装
-    local maxwell_home=$(ssh $MASTER_NODE "ls -d $MODULE_BASE/maxwell* 2>/dev/null | head -1")
-    if [ -z "$maxwell_home" ]; then
-        print_warning "未找到Maxwell安装，跳过配置"
-        return 0
-    fi
-    
-    export MAXWELL_HOME="$maxwell_home"
-    
-    # 使用maxwell-manager.sh的配置功能
+    # 委托给maxwell-manager.sh的setup功能来配置Maxwell
     print_info "使用maxwell-manager.sh配置Maxwell..."
     bash $SCRIPTS_BASE/maxwell/maxwell-manager.sh setup
     
@@ -354,26 +225,17 @@ setup_maxwell_config() {
 setup_spark_config() {
     print_step "配置Spark"
     
-    # 检查Spark是否安装
-    local spark_home=$(ssh $MASTER_NODE "ls -d $MODULE_BASE/spark* 2>/dev/null | head -1")
-    if [ -z "$spark_home" ]; then
-        print_warning "未找到Spark安装，跳过配置"
-        return 0
-    fi
-    
-    export SPARK_HOME="$spark_home"
-    
-    # 使用spark-manager.sh的配置功能
+    # 委托给spark-manager.sh的setup功能来配置Spark
     print_info "使用spark-manager.sh配置Spark..."
-    bash ../spark/spark-manager.sh setup
+    bash $SCRIPTS_BASE/spark/spark-manager.sh setup
     
-    if [ $? -eq 0 ]; then
-        print_success "Spark配置完成"
-        return 0
-    else
+    if [ $? -ne 0 ]; then
         print_error "Spark配置失败"
         return 1
     fi
+    
+    print_success "Spark配置完成"
+    return 0
 }
 
 setup_environment_variables() {

@@ -13,6 +13,7 @@ export SCRIPTS_BASE
 
 source "$SCRIPTS_BASE/common/color.sh"
 source "$SCRIPTS_BASE/common/common.sh"
+source "$SCRIPTS_BASE/common/config.sh"
 
 ACTION="${1:-}"
 
@@ -71,6 +72,8 @@ export SPARK_WORKER_MEMORY=1g
 export SPARK_WORKER_CORES=1
 export LD_LIBRARY_PATH=$HADOOP_HOME/lib/native
 export SPARK_DAEMON_JAVA_OPTS="-Djava.net.preferIPv4Stack=true"
+export YARN_CONF_DIR=$HADOOP_HOME/etc/hadoop
+export SPARK_HISTORY_OPTS="-Dspark.history.ui.port=18080 -Dspark.history.retainedApplications=100 -Dspark.history.fs.logDirectory=hdfs://${MASTERNODE}:8020/spark/eventLog"
 EOF
 
     # spark-defaults.conf
