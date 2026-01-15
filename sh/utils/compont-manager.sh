@@ -51,9 +51,9 @@ install_component() {
     local target_path="${TARGET_PATHS[$component]}"
     
     print_info "安装 $component ..."
-    
+    print_info "文件模式: $pattern"
     # 查找文件
-    local tar_file=$(find /vagrant -type f -name "$pattern" 2>/dev/null | head -1)
+    local tar_file=$(find /vagrant/data -type f -name "$pattern" 2>/dev/null | head -1)
     if [ -z "$tar_file" ]; then
         print_warning "未找到 $component 的安装文件，跳过安装"
         return 1
@@ -365,7 +365,7 @@ setup_spark_config() {
     
     # 使用spark-manager.sh的配置功能
     print_info "使用spark-manager.sh配置Spark..."
-    bash $SCRIPTS_BASE/spark/spark-manager.sh setup
+    bash ../spark/spark-manager.sh setup
     
     if [ $? -eq 0 ]; then
         print_success "Spark配置完成"
