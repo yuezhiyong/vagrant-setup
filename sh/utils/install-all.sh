@@ -692,25 +692,6 @@ create_directories_structure() {
         # 设置目录权限给vagrant用户
         run_on_host $host "sudo chown vagrant:vagrant $MODULE_BASE"
         
-        # 数据目录
-        #run_on_host $host "sudo mkdir -p $ZK_DATA_DIR $ZK_LOG_DIR"
-        #run_on_host $host "sudo mkdir -p $KAFKA_LOG_DIR $FLUME_LOG_DIR"
-        #run_on_host $host "sudo mkdir -p $LOG_DIR"
-        
-        # 设置数据目录权限
-        #run_on_host $host "sudo chown -R vagrant:vagrant $(dirname $ZK_DATA_DIR) $(dirname $KAFKA_LOG_DIR) $(dirname $FLUME_LOG_DIR) $LOG_DIR 2>/dev/null || true"
-        
-        # Hadoop目录
-        #run_on_host $host "sudo mkdir -p ${HDFS_NAME_DIR[@]} ${HDFS_DATA_DIR[@]} ${HDFS_CHECKPOINT_DIR[@]} ${YARN_NODEMANAGER_DIR[@]}"
-        #run_on_host $host "sudo mkdir -p $MODULE_BASE/hadoop/{tmp,logs}"
-        
-        # 设置Hadoop目录权限
-        #run_on_host $host "sudo chown -R vagrant:vagrant $(dirname ${HDFS_NAME_DIR[0]}) $MODULE_BASE/hadoop 2>/dev/null || true"
-        
-        # 脚本目录
-        #run_on_host $host "sudo mkdir -p $SCRIPTS_BASE"
-        #run_on_host $host "sudo chown vagrant:vagrant $SCRIPTS_BASE 2>/dev/null || true"
-        
         print_success "$host 目录创建完成"
     done
 }

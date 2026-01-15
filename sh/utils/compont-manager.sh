@@ -22,8 +22,8 @@ source $SCRIPTS_BASE/common/common.sh
 show_component_status() {
     print_step "组件安装状态"
     
-    local components=("Java" "Hadoop" "Zookeeper" "Kafka" "Flume")
-    local paths=("$JDK_HOME" "$HADOOP_HOME" "$ZOOKEEPER_HOME" "$KAFKA_HOME" "$FLUME_HOME")
+    local components=("Java" "Hadoop" "Zookeeper" "Kafka" "Flume" "Hive" "DataX" "Maxwell" "Spark")
+    local paths=("$JDK_HOME" "$HADOOP_HOME" "$ZOOKEEPER_HOME" "$KAFKA_HOME" "$FLUME_HOME" "$HIVE_HOME" "$DATAX_HOME" "$MAXWELL_HOME" "$SPARK_HOME")
     
     echo -e "${YELLOW}┌─────────────────┬─────────────────┬──────────────┐${NC}"
     echo -e "${YELLOW}│   组件名称       │   安装路径      │   状态       │${NC}"
@@ -53,9 +53,21 @@ show_component_status() {
                 "Flume")
                     version=$(flume-ng version 2>&1 | head -1 | cut -d' ' -f2)
                     ;;
+                "Hive")
+                    version=$(hive --version 2>/dev/null | head -1 | cut -d' ' -f3)
+                    ;;
+                "DataX")
+                    version="N/A"
+                    ;;
+                "Maxwell")
+                    version="N/A"
+                    ;;
+                "Spark")
+                    version=$(spark-shell --version 2>&1 | grep -o "version [0-9.]*)" | cut -d' ' -f2 | tr -d ')')
+                    ;;
             esac
             
-            if [ -n "$version" ]; then
+            if [ -n "$version" ] && [ "$version" != "N/A" ]; then
                 status="已安装 ($version)"
             fi
         fi
@@ -93,6 +105,22 @@ install_single_component() {
             install_component "flume"
             setup_flume_config
             ;;
+        "hive")
+            install_component "hive"
+            setup_hive_config
+            ;;
+        "datax")
+            install_component "datax"
+            setup_datax_config
+            ;;
+        "maxwell")
+            install_component "maxwell"
+            setup_maxwell_config
+            ;;
+        "spark")
+            install_component "spark"
+            setup_spark_config
+            ;;
         *)
             print_error "未知组件: $component"
             return 1
@@ -113,6 +141,10 @@ remove_component() {
         "zookeeper"|"zk") path="$ZOOKEEPER_HOME" ;;
         "kafka") path="$KAFKA_HOME" ;;
         "flume") path="$FLUME_HOME" ;;
+        "hive") path="$HIVE_HOME" ;;
+        "datax") path="$DATAX_HOME" ;;
+        "maxwell") path="$MAXWELL_HOME" ;;
+        "spark") path="$SPARK_HOME" ;;
         *) print_error "未知组件: $component"; return 1 ;;
     esac
     
@@ -181,7 +213,16 @@ case "$1" in
         
     "list")
         print_info "可用的组件文件:"
-        ls -la /vagrant/*.tar.gz /vagrant/*.tgz /vagrant/*.zip 2>/dev/null || echo "无文件"
+        # 搜索所有可能的组件文件格式
+        for pattern in "/vagrant/data/java/jdk-*.tar.gz" "/vagrant/data/hadoop/hadoop-*.tar.gz" "/vagrant/data/zookeeper/apache-zookeeper-*.tar.gz" "/vagrant/data/kafka/kafka_*.tgz" "/vagrant/data/flume/apache-flume-*.tar.gz" "/vagrant/data/hive/apache-hive-*.tar.gz" "/vagrant/data/datax/datax.tar.gz" "/vagrant/data/maxwell/maxwell-*.tar.gz" "/vagrant/data/spark/spark-*-bin-hadoop*.tgz"; do
+            if ls $pattern 1> /dev/null 2>&1; then
+                ls -la $pattern
+                files_found=true
+            fi
+        done
+        if [ "$files_found" = false ]; then
+            echo "无文件"
+        fi
         ;;
         
     *)
@@ -194,6 +235,6 @@ case "$1" in
         echo "  reinstall <component>   重新安装组件"
         echo "  list                    列出可用组件文件"
         echo ""
-        echo "可用组件: jdk, hadoop, zookeeper, kafka, flume"
+        echo "可用组件: jdk, hadoop, zookeeper, kafka, flume, hive, datax, maxwell, spark"
         exit 1
 esac

@@ -81,7 +81,7 @@ EOF
     cat > "$SPARK_HOME/conf/spark-defaults.conf" <<EOF
 spark.master                     spark://$(hostname):7077
 spark.eventLog.enabled           true
-spark.eventLog.dir               hdfs://$(hostname):9000/spark/eventLog
+spark.eventLog.dir               hdfs://$(hostname):8020/spark/eventLog
 spark.serializer                 org.apache.spark.serializer.KryoSerializer
 spark.sql.adaptive.enabled       true
 spark.sql.adaptive.coalescePartitions.enabled  true
@@ -199,7 +199,7 @@ start_master() {
     MASTER_PID=$!
     echo $MASTER_PID > "$PID_DIR/spark-master.pid"
 
-    sleep 3
+    sleep 5
 
     if ps -p $MASTER_PID > /dev/null 2>&1; then
         print_success "Spark Master 启动成功 (PID: $MASTER_PID)"

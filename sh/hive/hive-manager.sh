@@ -32,8 +32,8 @@ JAVA_HOME="/opt/module/java"
 MYSQL_HOST="centos-101"
 MYSQL_PORT="3306"
 MYSQL_DB="hive"
-MYSQL_USER="hive"
-MYSQL_PASS="hive"
+MYSQL_USER="root"
+MYSQL_PASS="000000"
 
 LOG_DIR="${HIVE_HOME}/logs"
 PID_FILE="/tmp/hive-metastore.pid"
@@ -171,22 +171,24 @@ configure_spark_integration() {
     
     # 检查是否已经存在 spark 相关配置
     if ! grep -q "hive.execution.engine" "$temp_hive_site"; then
-        # 在 </configuration> 标签前插入 Spark 相关配置
-        sed -i "/<\/configuration>/i\
-  <property>\
-    <name>hive.execution.engine</name>\
-    <value>spark</value>\
-    <description>使用 Spark 作为执行引擎</description>\
-  </property>\
-  <property>\
-    <name>spark.home</name>\
-    <value>$SPARK_HOME</value>\
-    <description>Spark 安装路径</description>\
-  </property>\
-  <property>\
-    <name>spark.sql.warehouse.dir</name>\
-    <value>/user/hive/warehouse</value>\
-    <description>Spark SQL warehouse 目录</description>\
+        # 删除现有的 </configuration> 标签，添加新的配置，最后再加上 </configuration> 标签
+        sed -i '/<\/configuration>/d' "$temp_hive_site"
+        # 添加 Spark 相关配置
+        cat >> "$temp_hive_site" << EOF
+  <property>
+    <name>hive.execution.engine</name>
+    <value>spark</value>
+    <description>使用 Spark 作为执行引擎</description>
+  </property>
+  <property>
+    <name>spark.home</name>
+    <value>$SPARK_HOME</value>
+    <description>Spark 安装路径</description>
+  </property>
+  <property>
+    <name>spark.sql.warehouse.dir</name>
+    <value>/user/hive/warehouse</value>
+    <description>Spark SQL warehouse 目录</description>
   </property>
   <property>
     <name>spark.yarn.jars</name>
@@ -196,57 +198,69 @@ configure_spark_integration() {
   <!-- Hive on Spark 必配 -->
   <property>
     <name>hive.spark.client.connect.timeout</name>
-    <value>100000ms</value>
+    <value>10000ms</value>
   </property>
   <property>
     <name>hive.spark.client.server.connect.timeout</name>
-    <value>60000ms</value>
+    <value>30000ms</value>
   </property>
   <property>
     <name>hive.spark.client.rpc.threads</name>
     <value>5</value>
-  </property>" "$temp_hive_site"
+  </property>
+</configuration>
+EOF
     else
         # 如果已有配置，更新 Spark 相关配置
         sed -i "s|<value>.*</value>|<value>$SPARK_HOME</value>|g" "$temp_hive_site"
         # 确保 spark.yarn.jars 属性存在
         if ! grep -q "spark.yarn.jars" "$temp_hive_site"; then
-            sed -i "/<\/configuration>/i\
-  <property>\
-    <name>spark.yarn.jars</name>\
-    <value>${SPARK_YARN_JAR:-$SPARK_HOME/jars/*}</value>\
-    <description>Spark YARN jars 路径</description>\
-  </property>\
-  <!-- Hive on Spark 必配 -->\
-  <property>\
-    <name>hive.spark.client.connect.timeout</name>\
-    <value>10000ms</value>\
-  </property>\
-  <property>\
-    <name>hive.spark.client.server.connect.timeout</name>\
-    <value>30000ms</value>\
-  </property>\
-  <property>\
-    <name>hive.spark.client.rpc.threads</name>\
-    <value>5</value>\
-  </property>" "$temp_hive_site"
+            # 删除现有的 </configuration> 标签，添加新的配置，最后再加上 </configuration> 标签
+            sed -i '/<\/configuration>/d' "$temp_hive_site"
+            # 添加 spark.yarn.jars 配置
+            cat >> "$temp_hive_site" << EOF
+  <property>
+    <name>spark.yarn.jars</name>
+    <value>${SPARK_YARN_JAR:-$SPARK_HOME/jars/*}</value>
+    <description>Spark YARN jars 路径</description>
+  </property>
+  <!-- Hive on Spark 必配 -->
+  <property>
+    <name>hive.spark.client.connect.timeout</name>
+    <value>10000ms</value>
+  </property>
+  <property>
+    <name>hive.spark.client.server.connect.timeout</name>
+    <value>30000ms</value>
+  </property>
+  <property>
+    <name>hive.spark.client.rpc.threads</name>
+    <value>5</value>
+  </property>
+</configuration>
+EOF
         else
             # 检查是否已包含 Hive on Spark 必需配置
             if ! grep -q "hive.spark.client.connect.timeout" "$temp_hive_site"; then
-                sed -i "/<\/configuration>/i\
-  <!-- Hive on Spark 必配 -->\
-  <property>\
-    <name>hive.spark.client.connect.timeout</name>\
-    <value>100000ms</value>\
-  </property>\
-  <property>\
-    <name>hive.spark.client.server.connect.timeout</name>\
-    <value>60000ms</value>\
-  </property>\
-  <property>\
-    <name>hive.spark.client.rpc.threads</name>\
-    <value>5</value>\
-  </property>" "$temp_hive_site"
+                # 删除现有的 </configuration> 标签，添加新的配置，最后再加上 </configuration> 标签
+                sed -i '/<\/configuration>/d' "$temp_hive_site"
+                # 添加 Hive on Spark 必需配置
+                cat >> "$temp_hive_site" << EOF
+  <!-- Hive on Spark 必配 -->
+  <property>
+    <name>hive.spark.client.connect.timeout</name>
+    <value>120000ms</value>
+  </property>
+  <property>
+    <name>hive.spark.client.server.connect.timeout</name>
+    <value>120000ms</value>
+  </property>
+  <property>
+    <name>hive.spark.client.rpc.threads</name>
+    <value>5</value>
+  </property>
+</configuration>
+EOF
             fi
         fi
     fi
@@ -262,7 +276,7 @@ configure_spark_integration() {
         cat > "$SPARK_HOME/conf/spark-defaults.conf" << EOF
 spark.master                    yarn
 spark.eventLog.enabled          true
-spark.eventLog.dir              hdfs://$(hostname):9000/spark/events
+spark.eventLog.dir              hdfs://$(hostname):8020/spark/events
 spark.serializer                org.apache.spark.serializer.KryoSerializer
 spark.sql.adaptive.enabled      true
 spark.sql.adaptive.coalescePartitions.enabled  true
