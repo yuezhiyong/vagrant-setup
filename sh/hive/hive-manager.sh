@@ -144,6 +144,86 @@ EOF
     print_info "hive-site.xml 已生成"
 }
 
+# ---------- configure spark integration ----------
+configure_spark_integration() {
+    print_info "配置 Hive Spark 集成..."
+    
+    # 检查 Spark 是否已安装
+    if [ -d "/opt/module/spark" ]; then
+        SPARK_HOME="/opt/module/spark"
+    else
+        # 尝试查找其他可能的 Spark 安装路径
+        SPARK_HOME=$(ls -rd /opt/module/spark* 2>/dev/null | head -n 1)
+        if [ -z "$SPARK_HOME" ]; then
+            print_warning "未找到 Spark 安装，跳过 Spark 集成配置"
+            return 0
+        fi
+    fi
+    
+    print_info "使用 SPARK_HOME: $SPARK_HOME"
+    
+    # 更新 hive-site.xml 以启用 Spark 引擎
+    local temp_hive_site="$HIVE_HOME/conf/hive-site.xml.tmp"
+    
+    # 首先复制现有配置
+    cp "$HIVE_HOME/conf/hive-site.xml" "$temp_hive_site"
+    
+    # 检查是否已经存在 spark 相关配置
+    if ! grep -q "hive.execution.engine" "$temp_hive_site"; then
+        # 在 </configuration> 标签前插入 Spark 相关配置
+        sed -i "/<\/configuration>/i\
+  <property>\
+    <name>hive.execution.engine</name>\
+    <value>spark</value>\
+    <description>使用 Spark 作为执行引擎</description>\
+  </property>\
+  <property>\
+    <name>spark.home</name>\
+    <value>$SPARK_HOME</value>\
+    <description>Spark 安装路径</description>\
+  </property>\
+  <property>\
+    <name>spark.sql.warehouse.dir</name>\
+    <value>/user/hive/warehouse</value>\
+    <description>Spark SQL warehouse 目录</description>\
+  </property>" "$temp_hive_site"
+    else
+        # 如果已有配置，更新 Spark home
+        sed -i "s|<value>.*</value>|<value>$SPARK_HOME</value>|g" "$temp_hive_site"
+    fi
+    
+    # 替换原来的配置文件
+    mv "$temp_hive_site" "$HIVE_HOME/conf/hive-site.xml"
+    
+    # 检查 spark-defaults.conf 文件是否存在，如果不存在则创建它
+    if [ ! -f "$SPARK_HOME/conf/spark-defaults.conf" ]; then
+        print_info "创建 spark-defaults.conf 配置文件..."
+        
+        # 创建 spark-defaults.conf 文件
+        cat > "$SPARK_HOME/conf/spark-defaults.conf" << EOF
+spark.master                    yarn
+spark.eventLog.enabled          true
+spark.eventLog.dir              hdfs://$(hostname):9000/spark/events
+spark.serializer                org.apache.spark.serializer.KryoSerializer
+spark.sql.adaptive.enabled      true
+spark.sql.adaptive.coalescePartitions.enabled  true
+spark.driver.extraClassPath     $HADOOP_HOME/share/hadoop/tools/lib/*:$HIVE_HOME/lib/*
+spark.executor.extraClassPath   $HADOOP_HOME/share/hadoop/tools/lib/*:$HIVE_HOME/lib/*
+EOF
+        
+        print_info "spark-defaults.conf 已创建"
+    else
+        print_info "检测到 spark-defaults.conf，配置 Spark 依赖路径..."
+    fi
+    
+    # 创建或更新 hive-exec-log4j2.properties 以包含 Spark 依赖
+    if [ ! -f "$HIVE_HOME/conf/hive-exec-log4j2.properties" ]; then
+        cp "$HIVE_HOME/conf/hive-log4j2.properties" "$HIVE_HOME/conf/hive-exec-log4j2.properties"
+    fi
+    
+    print_info "Hive Spark 集成配置完成"
+}
+
 # ---------- init metastore ----------
 init_metastore() {
     print_info "初始化 Hive Metastore"
@@ -256,6 +336,9 @@ setup_hive() {
     
     # 生成hive-site.xml配置文件
     configure_hive
+    
+    # 配置 Hive 以使用 Spark 作为执行引擎
+    configure_spark_integration
     
     # 创建hive-env.sh
     cat > "$HIVE_HOME/conf/hive-env.sh" <<EOF

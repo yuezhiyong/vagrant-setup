@@ -32,6 +32,7 @@ declare -A COMPONENTS=(
     ["hive"]="apache-hive-*.tar.gz"
     ["datax"]="datax.tar.gz"
     ["maxwell"]="maxwell-*.tar.gz"
+    ["spark"]="spark-*-bin-hadoop*.tgz"
 )
 
 # 期望的安装路径
@@ -44,6 +45,7 @@ declare -A TARGET_PATHS=(
     ["hive"]="$MODULE_BASE/hive"
     ["datax"]="$MODULE_BASE/datax"
     ["maxwell"]="$MODULE_BASE/maxwell"
+    ["spark"]="$MODULE_BASE/spark"
 )
 
 print_install_banner() {
@@ -439,6 +441,31 @@ setup_maxwell_config() {
     fi
 }
 
+setup_spark_config() {
+    print_step "配置Spark"
+    
+    # 检查Spark是否安装
+    local spark_home=$(ssh $MASTER_NODE "ls -d $MODULE_BASE/spark* 2>/dev/null | head -1")
+    if [ -z "$spark_home" ]; then
+        print_warning "未找到Spark安装，跳过配置"
+        return 0
+    fi
+    
+    export SPARK_HOME="$spark_home"
+    
+    # 使用spark-manager.sh的配置功能
+    print_info "使用spark-manager.sh配置Spark..."
+    bash $SCRIPTS_BASE/spark/spark-manager.sh setup
+    
+    if [ $? -eq 0 ]; then
+        print_success "Spark配置完成"
+        return 0
+    else
+        print_error "Spark配置失败"
+        return 1
+    fi
+}
+
 setup_environment_variables() {
     print_step "设置环境变量"
     
@@ -451,6 +478,7 @@ setup_environment_variables() {
     local hive_home=$(ssh $MASTER_NODE "ls -d $MODULE_BASE/hive* 2>/dev/null | head -1")
     local datax_home=$(ssh $MASTER_NODE "ls -d $MODULE_BASE/datax* 2>/dev/null | head -1")
     local maxwell_home=$(ssh $MASTER_NODE "ls -d $MODULE_BASE/maxwell* 2>/dev/null | head -1")
+    local spark_home=$(ssh $MASTER_NODE "ls -d $MODULE_BASE/spark* 2>/dev/null | head -1")
     
     local bashrc_content="
 # ============================================
@@ -489,6 +517,10 @@ export PATH=\$PATH:\$DATAX_HOME/bin
 export MAXWELL_HOME=${maxwell_home:-$MODULE_BASE/maxwell}
 export PATH=\$PATH:\$MAXWELL_HOME/bin
 
+# Spark环境
+export SPARK_HOME=${spark_home:-$MODULE_BASE/spark}
+export PATH=\$PATH:\$SPARK_HOME/bin:\$SPARK_HOME/sbin
+
 # Hadoop进程用户
 export HDFS_NAMENODE_USER=$HDFS_NAMENODE_USER
 export HDFS_DATANODE_USER=$HDFS_DATANODE_USER
@@ -505,6 +537,8 @@ alias zstart='$SCRIPTS_BASE/zookeeper/zk-manager.sh start'
 alias zstop='$SCRIPTS_BASE/zookeeper/zk-manager.sh stop'
 alias fstart='$SCRIPTS_BASE/flume/flume-manager.sh start'
 alias fstop='$SCRIPTS_BASE/flume/flume-manager.sh stop'
+alias sstart='$SCRIPTS_BASE/spark/spark-manager.sh start'
+alias sstop='$SCRIPTS_BASE/spark/spark-manager.sh stop'
 alias cstart='$SCRIPTS_BASE/cluster/start-all.sh'
 alias cstop='$SCRIPTS_BASE/cluster/stop-all.sh'
 alias cstatus='$SCRIPTS_BASE/cluster/status-all.sh'
@@ -538,6 +572,7 @@ alias cstatus='$SCRIPTS_BASE/cluster/status-all.sh'
     export HIVE_HOME="${hive_home:-$MODULE_BASE/hive}"
     export DATAX_HOME="${datax_home:-$MODULE_BASE/datax}"
     export MAXWELL_HOME="${maxwell_home:-$MODULE_BASE/maxwell}"
+    export SPARK_HOME="${spark_home:-$MODULE_BASE/spark}"
     
     # 更新配置文件
     update_config_file
@@ -564,6 +599,7 @@ update_config_file() {
         sed -i "s|export HIVE_HOME=.*|export HIVE_HOME=\"$HIVE_HOME\"|" "$config_file"
         sed -i "s|export DATAX_HOME=.*|export DATAX_HOME=\"$DATAX_HOME\"|" "$config_file"
         sed -i "s|export MAXWELL_HOME=.*|export MAXWELL_HOME=\"$MAXWELL_HOME\"|" "$config_file"
+        sed -i "s|export SPARK_HOME=.*|export SPARK_HOME=\"$SPARK_HOME\"|" "$config_file"
         
         print_success "配置文件更新完成"
     fi
@@ -726,8 +762,8 @@ install_all_components() {
     # 4. 安装组件
     print_step "安装组件"
     
-    # 安装顺序很重要：Java -> Zookeeper -> Hadoop -> Kafka -> Flume -> Hive -> DataX -> Maxwell
-    local components=("jdk" "zookeeper" "hadoop" "kafka" "flume" "hive" "datax" "maxwell")
+    # 安装顺序很重要：Java -> Zookeeper -> Hadoop -> Kafka -> Flume -> Hive -> DataX -> Maxwell -> Spark
+    local components=("jdk" "zookeeper" "hadoop" "kafka" "flume" "hive" "datax" "maxwell" "spark")
     
     for component in "${components[@]}"; do
         install_component $component || {
@@ -773,6 +809,10 @@ install_all_components() {
         print_warning "Maxwell配置失败，可能需要手动配置"
     }
     
+    setup_spark_config || {
+        print_warning "Spark配置失败，可能需要手动配置"
+    }
+    
     # 7. 设置环境变量
     setup_environment_variables
     
@@ -812,7 +852,7 @@ case "$1" in
         
     "components")
         print_step "安装所有组件"
-        for component in jdk zookeeper hadoop kafka flume hive datax maxwell; do
+        for component in jdk zookeeper hadoop kafka flume hive datax maxwell spark; do
             install_component $component
         done
         ;;
@@ -829,6 +869,7 @@ case "$1" in
         setup_hive_config
         setup_datax_config
         setup_maxwell_config
+        setup_spark_config
         setup_environment_variables
         ;;
         
