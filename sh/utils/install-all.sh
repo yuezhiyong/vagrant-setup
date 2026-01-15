@@ -479,7 +479,7 @@ export PATH=\$PATH:\$FLUME_HOME/bin
 
 # Hive环境
 export HIVE_HOME=${hive_home:-$MODULE_BASE/hive}
-export PATH=\$PATH:\$HIVE_HOME/bin:\$HIVE_HOME/bin
+export PATH=\$PATH:\$HIVE_HOME/bin
 
 # DataX环境
 export DATAX_HOME=${datax_home:-$MODULE_BASE/datax}
@@ -561,6 +561,9 @@ update_config_file() {
         sed -i "s|export ZOOKEEPER_HOME=.*|export ZOOKEEPER_HOME=\"$ZOOKEEPER_HOME\"|" "$config_file"
         sed -i "s|export KAFKA_HOME=.*|export KAFKA_HOME=\"$KAFKA_HOME\"|" "$config_file"
         sed -i "s|export FLUME_HOME=.*|export FLUME_HOME=\"$FLUME_HOME\"|" "$config_file"
+        sed -i "s|export HIVE_HOME=.*|export HIVE_HOME=\"$HIVE_HOME\"|" "$config_file"
+        sed -i "s|export DATAX_HOME=.*|export DATAX_HOME=\"$DATAX_HOME\"|" "$config_file"
+        sed -i "s|export MAXWELL_HOME=.*|export MAXWELL_HOME=\"$MAXWELL_HOME\"|" "$config_file"
         
         print_success "配置文件更新完成"
     fi

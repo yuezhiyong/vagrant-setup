@@ -3,6 +3,17 @@
 # Hive Manager Script
 # Author: for production-like bigdata env
 # =========================================================
+set -euo pipefail
+# Override SCRIPTS_BASE with the actual script location
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPTS_BASE="$(cd "$SCRIPT_DIR/.." && pwd)"
+export SCRIPTS_BASE
+echo "SCRIPTS_BASE: $SCRIPTS_BASE"
+
+source $SCRIPTS_BASE/common/color.sh
+source $SCRIPTS_BASE/common/common.sh
+
+ACTION="${1:-}"
 
 HIVE_VERSION="3.1.3"
 HIVE_TAR="hive-${HIVE_VERSION}.tar.gz"
@@ -26,13 +37,6 @@ MYSQL_PASS="hive"
 LOG_DIR="${HIVE_HOME}/logs"
 PID_FILE="/tmp/hive-metastore.pid"
 
-print_info() {
-    echo -e "[INFO] $*"
-}
-
-print_error() {
-    echo -e "[ERROR] $*" >&2
-}
 
 # ---------- check env ----------
 check_env() {
@@ -241,12 +245,12 @@ setup_hive() {
     # 检查MySQL连接
     print_info "检查MySQL连接..."
     if ! command -v mysql &> /dev/null; then
-        print_warn "mysql命令未找到，将跳过数据库连接测试"
+        print_warning "mysql命令未找到，将跳过数据库连接测试"
     else
         if mysql -h "$MYSQL_HOST" -P "$MYSQL_PORT" -u "$MYSQL_USER" -p"$MYSQL_PASS" -e "USE $MYSQL_DB;" &> /dev/null; then
             print_info "MySQL连接正常"
         else
-            print_warn "无法连接到MySQL数据库，Hive元数据存储可能无法工作"
+            print_warning "无法连接到MySQL数据库，Hive元数据存储可能无法工作"
         fi
     fi
     
@@ -276,12 +280,33 @@ appender.console.target = SYSTEM_ERR
 appender.console.layout.type = PatternLayout
 appender.console.layout.pattern = %d{yy/MM/dd HH:mm:ss} [%t]: %p %c{2}: %m%n
 EOF
+    # ========== 导出环境变量到 ~/.bashrc ==========
+    BASHRC="$HOME/.bashrc"
+    NEED_UPDATE=false
+
+    if ! grep -q "^export HIVE_HOME=" "$BASHRC" 2>/dev/null; then
+        echo "export HIVE_HOME=$HIVE_HOME" >> "$BASHRC"
+        NEED_UPDATE=true
+    fi
+
+    if ! grep -q 'PATH.*\$HIVE_HOME/bin' "$BASHRC" 2>/dev/null; then
+        echo 'export PATH="$HIVE_HOME/bin:$PATH"' >> "$BASHRC"
+        NEED_UPDATE=true
+    fi
+
+    if [ "$NEED_UPDATE" = true ]; then
+        print_info "已将 Hive 环境变量写入 $BASHRC"
+    fi
+
+    # 同时导出到当前 shell（供本脚本后续使用）
+    export HIVE_HOME
+    export PATH="$HIVE_HOME/bin:$PATH"
 
     print_info "Hive配置完成"
 }
 
 # ---------- main ----------
-case "$1" in
+case "$ACTION" in
     install)
         check_env
         install_hive
@@ -303,7 +328,13 @@ case "$1" in
     setup)
         setup_hive
         ;;
-    *)
+    "")
         echo "用法: $0 {install|init|start|stop|status|setup}"
+        exit 1
+        ;;
+    *)
+        echo "未知命令: $1"
+        echo "用法: $0 {install|init|start|stop|status|setup}"
+        exit 1
         ;;
 esac
