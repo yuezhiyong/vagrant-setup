@@ -63,7 +63,7 @@ show_help() {
     echo "  run-job <jobJson> <runDate> [logDir] [Xms] [Xmx]"
     echo "        执行带日期参数的 DataX 任务"
     echo "        jobJson: Job JSON 配置文件路径"
-    echo "        runDate: 日期参数，例如 20260114"
+    echo "        runDate: 日期参数，格式 yyyy-MM-dd，例如 2026-01-16"
     echo "        logDir:  日志目录 (可选)"
     echo "        Xms:     JVM 初始内存 (可选，默认: $DEFAULT_XMS)"
     echo "        Xmx:     JVM 最大内存 (可选，默认: $DEFAULT_XMX)"
@@ -71,7 +71,7 @@ show_help() {
     echo "  run-all-jobs <jobDir> <runDate> [logDir] [Xms] [Xmx]"
     echo "        执行目录下所有 DataX 任务"
     echo "        jobDir:  Job JSON 配置文件目录"
-    echo "        runDate: 日期参数 (必填，所有任务都会使用该日期参数)"
+    echo "        runDate: 日期参数 (必填，格式 yyyy-MM-dd，所有任务都会使用该日期参数)"
     echo "        logDir:  日志目录 (可选，默认: $DEFAULT_LOG_DIR)"
     echo "        Xms:     JVM 初始内存 (可选，默认: $DEFAULT_XMS)"
     echo "        Xmx:     JVM 最大内存 (可选，默认: $DEFAULT_XMX)"
@@ -82,11 +82,30 @@ show_help() {
     echo "示例:"
     echo "  $0 start /path/to/job.json"
     echo "  $0 start /path/to/job.json /custom/log/dir 256m 512m"
-    echo "  $0 run-job /path/to/job.json 20260114"
-    echo "  $0 run-job /path/to/job.json 20260114 /custom/log/dir 256m 512m"
-    echo "  $0 run-all-jobs /path/to/job/directory 20260114"
-    echo "  $0 run-all-jobs /path/to/job/directory 20260114 /custom/log/dir 256m 512m"
+    echo "  $0 run-job /path/to/job.json 2026-01-16"
+    echo "  $0 run-job /path/to/job.json 2026-01-16 /custom/log/dir 256m 512m"
+    echo "  $0 run-all-jobs /path/to/job/directory 2026-01-16"
+    echo "  $0 run-all-jobs /path/to/job/directory 2026-01-16 /custom/log/dir 256m 512m"
     echo "  $0 generate jdbc:mysql://localhost:3306/test user pass test table1 /jobs/"
+}
+
+# 检查日期格式 (yyyy-MM-dd)
+check_date_format() {
+    local date_str=$1
+    
+    # 检查基本格式 YYYY-MM-DD
+    if ! [[ $date_str =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+        print_error "日期格式错误: $date_str, 请使用 yyyy-MM-dd 格式 (例如: 2026-01-16)"
+        return 1
+    fi
+    
+    # 使用 date 命令验证日期是否有效
+    if ! date -d "$date_str" >/dev/null 2>&1; then
+        print_error "无效日期: $date_str, 请输入正确的日期"
+        return 1
+    fi
+    
+    return 0
 }
 
 # 检查 Python
@@ -203,6 +222,15 @@ generate_job() {
         [ -z "$job_dir" ] && print_error "Job 输出目录必需"
     fi
 
+    # 检查输出目录是否存在文件
+    if [ -d "$job_dir" ]; then
+        # 检查目录是否包含任何文件
+        if [ -n "$(ls -A "$job_dir" 2>/dev/null)" ]; then
+            print_error "目标目录 $job_dir 中已存在文件，不能生成新的任务配置。请清理目录或选择其他目录。"
+            exit 1
+        fi
+    fi
+    
     # 创建输出目录
     mkdir -p "$job_dir"
 
@@ -231,7 +259,7 @@ generate_job() {
 # ----------------------------
 run_datax_job() {
     local job_json=$1      # 原始 job JSON 文件
-    local run_date=$2      # 日期参数，例如 20260114
+    local run_date=$2      # 日期参数，格式 yyyy-MM-dd，例如 2026-01-16
     local log_dir=$3       # 可选日志目录
     local jvm_xms=$4       # 可选JVM初始内存
     local jvm_xmx=$5       # 可选JVM最大内存
@@ -244,6 +272,11 @@ run_datax_job() {
 
     [ -z "$job_json" ] && print_error "请指定 Job JSON 文件"
     [ -z "$run_date" ] && print_error "请指定日期参数"
+
+    # Validate date format
+    if ! check_date_format "$run_date"; then
+        exit 1
+    fi
 
     # 检查 job JSON 文件
     if [ ! -f "$job_json" ]; then
@@ -460,6 +493,10 @@ case "$1" in
             show_help
             exit 1
         fi
+        # Validate date format
+        if ! check_date_format "$3"; then
+            exit 1
+        fi
         # Check python for standalone run-job command
         check_python
         run_datax_job "$2" "$3" "$4" "$5" "$6" "$PYTHON_BIN"
@@ -473,6 +510,10 @@ case "$1" in
         if [ -z "$3" ]; then
             print_error "请指定运行日期参数"
             show_help
+            exit 1
+        fi
+        # Validate date format
+        if ! check_date_format "$3"; then
             exit 1
         fi
         run_all_datax_jobs "$2" "$3" "$4" "$5" "$6"
