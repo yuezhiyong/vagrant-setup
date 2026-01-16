@@ -139,6 +139,16 @@ configure_hive() {
     <value>nonstrict</value>
   </property>
 
+  <property>
+    <name>hive.server2.thrift.bind.host</name>
+    <value>0.0.0.0</value>
+  </property>
+
+  <property>
+    <name>hive.server2.thrift.port</name>
+    <value>10000</value>
+  </property>
+
 </configuration>
 EOF
 
@@ -343,6 +353,35 @@ start_metastore() {
     fi
 }
 
+# ---------- start hiveserver ----------
+start_hiveserver() {
+    mkdir -p "$PID_DIR" "$LOG_DIR"
+    
+    local hiveserver_pid_file="$PID_DIR/hiveserver2.pid"
+    
+    if [ -f "$hiveserver_pid_file" ] && ps -p $(cat "$hiveserver_pid_file") > /dev/null 2>&1; then
+        print_info "HiveServer2 已运行 (PID=$(cat $hiveserver_pid_file))"
+        return 0
+    fi
+    
+    print_info "启动 HiveServer2..."
+    
+    nohup "$HIVE_BIN" --service hiveserver2 \
+        > "$LOG_DIR/hiveserver2.log" 2>&1 &
+    
+    echo $! > "$hiveserver_pid_file"
+    
+    sleep 8
+    
+    if [ -f "$hiveserver_pid_file" ] && ps -p $(cat "$hiveserver_pid_file") > /dev/null 2>&1; then
+        print_info "HiveServer2 启动成功 (PID=$(cat $hiveserver_pid_file))"
+    else
+        print_error "HiveServer2 启动失败"
+        rm -f "$hiveserver_pid_file"
+        exit 1
+    fi
+}
+
 # ---------- stop metastore ----------
 stop_metastore() {
     if ! is_metastore_running; then
@@ -371,6 +410,41 @@ stop_metastore() {
     rm -f "$PID_FILE"
 }
 
+# ---------- stop hiveserver ----------
+stop_hiveserver() {
+    local hiveserver_pid_file="$PID_DIR/hiveserver2.pid"
+    
+    if [ ! -f "$hiveserver_pid_file" ]; then
+        print_info "HiveServer2 未运行"
+        return 0
+    fi
+    
+    local pid
+    pid=$(cat "$hiveserver_pid_file")
+    
+    if ! ps -p "$pid" > /dev/null 2>&1; then
+        print_info "HiveServer2 未运行"
+        rm -f "$hiveserver_pid_file"
+        return 0
+    fi
+    
+    print_info "停止 HiveServer2 (PID=$pid)..."
+    kill "$pid"
+    
+    for i in {1..10}; do
+        if ! ps -p "$pid" > /dev/null 2>&1; then
+            rm -f "$hiveserver_pid_file"
+            print_info "HiveServer2 已停止"
+            return 0
+        fi
+        sleep 1
+    done
+    
+    print_warning "正常停止失败，强制 kill"
+    kill -9 "$pid"
+    rm -f "$hiveserver_pid_file"
+}
+
 # ---------- restart metastore ----------
 restart_metastore() {
     print_info "重启 Metastore..."
@@ -379,12 +453,31 @@ restart_metastore() {
     start_metastore
 }
 
+# ---------- restart hiveserver ----------
+restart_hiveserver() {
+    print_info "重启 HiveServer2..."
+    stop_hiveserver
+    sleep 3
+    start_hiveserver
+}
+
 # ---------- status ----------
 status_metastore() {
     if [ -f "$PID_FILE" ] && ps -p "$(cat $PID_FILE)" >/dev/null; then
         print_info "Metastore 正在运行"
     else
         print_info "Metastore 未运行"
+    fi
+}
+
+# ---------- status hiveserver ----------
+status_hiveserver() {
+    local hiveserver_pid_file="$PID_DIR/hiveserver2.pid"
+    
+    if [ -f "$hiveserver_pid_file" ] && ps -p $(cat "$hiveserver_pid_file") > /dev/null 2>&1; then
+        print_info "HiveServer2 正在运行 (PID=$(cat $hiveserver_pid_file))"
+    else
+        print_info "HiveServer2 未运行"
     fi
 }
 
@@ -490,25 +583,37 @@ case "$ACTION" in
     start)
         start_metastore
         ;;
+    start-hiveserver)
+        start_hiveserver
+        ;;
     stop)
         stop_metastore
+        ;;
+    stop-hiveserver)
+        stop_hiveserver
         ;;
     restart)
         restart_metastore
         ;;
+    restart-hiveserver)
+        restart_hiveserver
+        ;;
     status)
         status_metastore
+        ;;
+    status-hiveserver)
+        status_hiveserver
         ;;
     setup)
         setup_hive
         ;;
     "")
-        echo "用法: $0 {install|init|start|stop|restart|status|setup}"
+        echo "用法: $0 {install|init|start|start-hiveserver|stop|stop-hiveserver|restart|restart-hiveserver|status|status-hiveserver|setup}"
         exit 1
         ;;
     *)
         echo "未知命令: $1"
-        echo "用法: $0 {install|init|start|stop|restart|status|setup}"
+        echo "用法: $0 {install|init|start|start-hiveserver|stop|stop-hiveserver|restart|restart-hiveserver|status|status-hiveserver|setup}"
         exit 1
         ;;
 esac
