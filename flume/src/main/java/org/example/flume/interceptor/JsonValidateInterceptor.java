@@ -37,19 +37,26 @@ public class JsonValidateInterceptor implements Interceptor {
         return event;
     }
 
-    private Pair<String, Boolean> hasHeaderTs(String body) {
+    private static Pair<String, Boolean> hasHeaderTs(String body) {
         try {
-            JsonObject jsonObject = new Gson().fromJson(body, new TypeToken<JsonObject>() {
+            Map<String, Object> resMap = new Gson().fromJson(body, new TypeToken<Map<String, Object>>() {
             }.getType());
-            JsonElement jsonElement = jsonObject.get("ts");
-            String ts = jsonElement.getAsString();
-            return new Pair<>(ts, true);
+            Object tsObj = resMap.get("ts");
+            if (tsObj != null) {
+                String ts = tsObj.toString();
+                return new Pair<>(ts, true);
+            }
         } catch (Exception e) {
             LOGGER.error("无法正确处理当前Event:{}", body);
         }
         return new Pair<>(null, false);
     }
 
+    public static void main(String[] args) {
+        String json = "{\"common\":{\"ar\":\"29\",\"ba\":\"xiaomi\",\"ch\":\"web\",\"is_new\":\"0\",\"md\":\"xiaomi 13\",\"mid\":\"mid_446\",\"os\":\"Android 13.0\",\"sid\":\"29229754-a940-45b2-af60-1a0f103456a7\",\"uid\":\"144\",\"vc\":\"v2.1.134\"},\"page\":{\"during_time\":17464,\"item\":\"559\",\"item_type\":\"order_id\",\"last_page_id\":\"order\",\"page_id\":\"payment\"},\"ts\":1704727866717}";
+        Object res = hasHeaderTs(json);
+        System.out.println(res);
+    }
 
     @Override
     public List<Event> intercept(List<Event> list) {
