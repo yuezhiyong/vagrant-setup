@@ -29,22 +29,24 @@ public class JsonValidateInterceptor implements Interceptor {
     public Event intercept(Event event) {
         Map<String, String> headers = event.getHeaders();
         String log = new String(event.getBody(), StandardCharsets.UTF_8);
-        Pair<String, Boolean> headerPair = hasHeaderTs(log);
+        Pair<Long, Boolean> headerPair = hasHeaderTs(log);
         if (headerPair.getSecond()) {
-            String ts = headerPair.getFirst();
-            headers.put("timestamp", ts);
+            LOGGER.info("start add timestamp:{}", headerPair.getFirst());
+            Long ts = headerPair.getFirst();
+            headers.put("timestamp", ts + "");
         }
         return event;
     }
 
-    private static Pair<String, Boolean> hasHeaderTs(String body) {
+    private static Pair<Long, Boolean> hasHeaderTs(String body) {
         try {
             Map<String, Object> resMap = new Gson().fromJson(body, new TypeToken<Map<String, Object>>() {
             }.getType());
             Object tsObj = resMap.get("ts");
             if (tsObj != null) {
                 String ts = tsObj.toString();
-                return new Pair<>(ts, true);
+                Long tsValue = (long) Double.parseDouble(ts) * 1000;
+                return new Pair<>(tsValue, true);
             }
         } catch (Exception e) {
             LOGGER.error("无法正确处理当前Event:{}", body);
@@ -66,7 +68,7 @@ public class JsonValidateInterceptor implements Interceptor {
         List<Event> pass = new ArrayList<>();
         for (Event event : list) {
             String body = new String(event.getBody());
-            Pair<String, Boolean> has = hasHeaderTs(body);
+            Pair<Long, Boolean> has = hasHeaderTs(body);
             if (!has.getSecond()) {
                 LOGGER.warn("当前事件不准确:{}", body);
                 continue;
