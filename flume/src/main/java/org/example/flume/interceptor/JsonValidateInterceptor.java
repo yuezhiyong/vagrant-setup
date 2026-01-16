@@ -73,6 +73,7 @@ public class JsonValidateInterceptor implements Interceptor {
                 LOGGER.warn("当前事件不准确:{}", body);
                 continue;
             }
+            event.getHeaders().put("timestamp", has.getFirst() + "");
             pass.add(event);
         }
         return pass;
