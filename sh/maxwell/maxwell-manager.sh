@@ -149,6 +149,91 @@ bootstrap_table() {
     echo "  tail -f $LOG_DIR/bootstrap-$db-$table.log"
 }
 
+# Bootstrap all tables in a database
+bootstrap_database() {
+    local db=$1
+
+    if [ -z "$db" ]; then
+        echo "用法: $0 bootstrap-database <db>"
+        exit 1
+    fi
+
+    # 检查 Maxwell 主进程是否运行
+    if ! pgrep -f "com.zendesk.maxwell.Maxwell" >/dev/null 2>&1; then
+        print_error "Maxwell 未运行，请先执行: $0 start"
+        exit 1
+    fi
+
+    print_info "获取数据库 $db 中的所有表..."
+    
+    # 提示用户输入 MySQL 连接参数
+    echo -n "请输入 MySQL 主机地址 (默认: localhost): "
+    read -r input_host
+    mysql_host=${input_host:-localhost}
+    
+    echo -n "请输入 MySQL 用户名 (默认: root): "
+    read -r input_user
+    mysql_user=${input_user:-root}
+    
+    echo -n "请输入 MySQL 端口 (默认: 3306): "
+    read -r input_port
+    mysql_port=${input_port:-3306}
+    
+    # 提示输入密码但不在屏幕上显示
+    echo -n "请输入 MySQL 密码: "
+    stty -echo  # 关闭回显
+    read -r mysql_password
+    stty echo   # 恢复回显
+    echo  # 换行
+
+    # 创建临时 MySQL 配置文件用于安全认证
+    MYSQL_CNF=$(mktemp)
+    chmod 600 $MYSQL_CNF
+    cat > $MYSQL_CNF << EOF
+[client]
+host=$mysql_host
+user=$mysql_user
+password=$mysql_password
+port=$mysql_port
+EOF
+    
+    tables=$(mysql --defaults-file=$MYSQL_CNF -e "SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA='$db' AND TABLE_TYPE='BASE TABLE';" 2>/dev/null | grep -v "TABLE_NAME")
+    
+    # 清理临时配置文件
+    rm -f $MYSQL_CNF
+
+    if [ -z "$tables" ]; then
+        print_error "无法获取数据库 $db 中的表信息或数据库中无表"
+        exit 1
+    fi
+
+    print_info "开始为数据库 $db 中的以下表进行 bootstrap:"
+    echo "$tables"
+    echo ""
+
+    # 对每个表执行 bootstrap
+    for table in $tables; do
+        print_info "正在启动 $db.$table 的 bootstrap..."
+        
+        nohup $MAXWELL_HOME/bin/maxwell-bootstrap \
+            --config $MAXWELL_CONF \
+            --database $db \
+            --table $table \
+            > $LOG_DIR/bootstrap-$db-$table.log 2>&1 &
+        
+        # 等待一小段时间以确保启动成功
+        sleep 1
+        
+        echo "Bootstrap started for $db.$table, log:"
+        echo "  tail -f $LOG_DIR/bootstrap-$db-$table.log"
+        echo ""
+    done
+    
+    print_info "所有表的 bootstrap 任务已启动完成！"
+    print_info "查看各表日志: ls $LOG_DIR/bootstrap-$db-*.log"
+    print_info "实时监控所有日志: tail -f $LOG_DIR/bootstrap-$db-*.log"
+}
+
 # 配置 Maxwell 集群环境
 setup_maxwell() {
     print_info "配置 Maxwell 集群环境..."
@@ -205,14 +290,18 @@ case "$1" in
     bootstrap)
         bootstrap_table "$2" "$3" "$4"
         ;;
+    bootstrap-database)
+        bootstrap_database "$2"
+        ;;
     setup)
         setup_maxwell
         ;;
     *)
-        echo "Usage: $0 {start|stop|restart|status|bootstrap|setup}"
+        echo "Usage: $0 {start|stop|restart|status|bootstrap|bootstrap-database|setup}"
         echo ""
         echo "Examples:"
         echo "  $0 bootstrap order_db orders"
+        echo "  $0 bootstrap-database order_db"
         exit 1
         ;;
 esac
