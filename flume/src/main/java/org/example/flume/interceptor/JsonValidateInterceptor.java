@@ -45,7 +45,7 @@ public class JsonValidateInterceptor implements Interceptor {
             Object tsObj = resMap.get("ts");
             if (tsObj != null) {
                 String ts = tsObj.toString();
-                Long tsValue = (long) Double.parseDouble(ts) * 1000;
+                Long tsValue = (long) Double.parseDouble(ts);
                 return new Pair<>(tsValue, true);
             }
         } catch (Exception e) {
