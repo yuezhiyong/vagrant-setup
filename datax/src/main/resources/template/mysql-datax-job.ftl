@@ -40,7 +40,7 @@
                 "parameter": {
                   "defaultFS": "hdfs://centos-101",
                   "fileType": "orc",
-                  "path": "/original_data/db/${mysqlDatabase}/${tableName}_full/{date}",
+                  "path": "/original_data/${mysqlDatabase}/db/${tableName}_full/{date}",
                   "fileName": "${tableName}",
                   "column": [
                   <#list columns as c>
