@@ -32,7 +32,7 @@ print_error() {
 show_help() {
     echo "DataX 管理脚本 - 用法说明"
     echo ""
-    echo "命令格式: $0 {start|stop|status|setup|generate|run-job|help}"
+    echo "命令格式: $0 {start|stop|status|setup|generate|run-job|run-all-jobs|help}"
     echo ""
     echo "可用命令:"
     echo "  start <jobJson> [logDir] [Xms] [Xmx]"
@@ -68,6 +68,14 @@ show_help() {
     echo "        Xms:     JVM 初始内存 (可选，默认: $DEFAULT_XMS)"
     echo "        Xmx:     JVM 最大内存 (可选，默认: $DEFAULT_XMX)"
     echo ""
+    echo "  run-all-jobs <jobDir> <runDate> [logDir] [Xms] [Xmx]"
+    echo "        执行目录下所有 DataX 任务"
+    echo "        jobDir:  Job JSON 配置文件目录"
+    echo "        runDate: 日期参数 (必填，所有任务都会使用该日期参数)"
+    echo "        logDir:  日志目录 (可选，默认: $DEFAULT_LOG_DIR)"
+    echo "        Xms:     JVM 初始内存 (可选，默认: $DEFAULT_XMS)"
+    echo "        Xmx:     JVM 最大内存 (可选，默认: $DEFAULT_XMX)"
+    echo ""
     echo "  help"
     echo "        显示此帮助信息"
     echo ""
@@ -76,6 +84,8 @@ show_help() {
     echo "  $0 start /path/to/job.json /custom/log/dir 256m 512m"
     echo "  $0 run-job /path/to/job.json 20260114"
     echo "  $0 run-job /path/to/job.json 20260114 /custom/log/dir 256m 512m"
+    echo "  $0 run-all-jobs /path/to/job/directory 20260114"
+    echo "  $0 run-all-jobs /path/to/job/directory 20260114 /custom/log/dir 256m 512m"
     echo "  $0 generate jdbc:mysql://localhost:3306/test user pass test table1 /jobs/"
 }
 
@@ -216,8 +226,8 @@ generate_job() {
 }
 
 # ----------------------------
-# 执行 DataX Job（支持动态日期）
-# 比如 ./datax-manager.sh run ~/datax-test/gmall.activity_info1.json 20260114
+# 执行单个 DataX Job（支持动态日期）
+# 比如 ./datax-manager.sh run-job ~/datax-test/gmall.activity_info1.json 20260114
 # ----------------------------
 run_datax_job() {
     local job_json=$1      # 原始 job JSON 文件
@@ -225,6 +235,7 @@ run_datax_job() {
     local log_dir=$3       # 可选日志目录
     local jvm_xms=$4       # 可选JVM初始内存
     local jvm_xmx=$5       # 可选JVM最大内存
+    local python_bin=${6:-$PYTHON_BIN}  # Python二进制文件路径，可选
     
     # 设置默认值
     log_dir=${log_dir:-"$DEFAULT_LOG_DIR"}
@@ -238,9 +249,6 @@ run_datax_job() {
     if [ ! -f "$job_json" ]; then
         print_error "Job JSON 文件不存在: $job_json"
     fi
-
-    # 检查 Python
-    check_python
 
     # 创建日志目录
     mkdir -p "$log_dir"
@@ -278,11 +286,76 @@ run_datax_job() {
     print_info "JVM 内存设置: -Xms${jvm_xms} -Xmx${jvm_xmx}"
 
     # 执行 DataX，添加内存限制参数
-    nohup "$PYTHON_BIN" "$DATAX_HOME/bin/datax.py" -j "-Xms${jvm_xms} -Xmx${jvm_xmx}" "$job_with_date" > "$log_file" 2>&1 &
+    nohup "$python_bin" "$DATAX_HOME/bin/datax.py" -j "-Xms${jvm_xms} -Xmx${jvm_xmx}" "$job_with_date" > "$log_file" 2>&1 &
 
     local pid=$!
     echo $pid > "/tmp/datax_${run_date}.pid"
     print_info "DataX PID: $pid"
+}
+
+
+# ----------------------------
+# 执行目录下所有 DataX Job
+# 比如 ./datax-manager.sh run-all-jobs /path/to/job/directory runDate [logDir] [Xms] [Xmx]
+# ----------------------------
+run_all_datax_jobs() {
+    local job_dir=$1         # Job JSON 文件所在目录
+    local run_date=$2        # 日期参数
+    local log_dir=$3         # 可选日志目录
+    local jvm_xms=$4         # 可选JVM初始内存
+    local jvm_xmx=$5         # 可选JVM最大内存
+    
+    # 设置默认值
+    log_dir=${log_dir:-"$DEFAULT_LOG_DIR"}
+    jvm_xms=${jvm_xms:-$DEFAULT_XMS}
+    jvm_xmx=${jvm_xmx:-$DEFAULT_XMX}
+
+    [ -z "$job_dir" ] && print_error "请指定 Job JSON 文件目录"
+    [ -z "$run_date" ] && print_error "请指定运行日期参数"
+
+    # 检查目录是否存在
+    if [ ! -d "$job_dir" ]; then
+        print_error "Job 目录不存在: $job_dir"
+        exit 1
+    fi
+
+    # 检查 Python (only once for all jobs)
+    check_python
+
+    # 创建日志目录
+    mkdir -p "$log_dir"
+
+    print_info "正在扫描目录: $job_dir"
+    
+    # 定义处理单个 job 的函数
+    process_single_job() {
+        local job_file=$1
+        local run_date=$2
+        local log_dir=$3
+        local jvm_xms=$4
+        local jvm_xmx=$5
+        
+        print_info "发现 Job 文件: $(basename "$job_file")"
+        
+        # 总是使用带日期参数的执行方式 since run_date is required
+        print_info "执行带日期参数的 DataX 任务: $job_file"
+        run_datax_job "$job_file" "$run_date" "$log_dir" "$jvm_xms" "$jvm_xmx" "$PYTHON_BIN"
+    }
+    
+    # 遍历目录下的所有 JSON 和 JOB 文件
+    for job_file in "$job_dir"/*.json; do
+        if [ -f "$job_file" ]; then
+            process_single_job "$job_file" "$run_date" "$log_dir" "$jvm_xms" "$jvm_xmx"
+        fi
+    done
+    
+    for job_file in "$job_dir"/*.job; do
+        if [ -f "$job_file" ]; then
+            process_single_job "$job_file" "$run_date" "$log_dir" "$jvm_xms" "$jvm_xmx"
+        fi
+    done
+    
+    print_info "所有 Job 任务执行完毕"
 }
 
 
@@ -387,7 +460,22 @@ case "$1" in
             show_help
             exit 1
         fi
-        run_datax_job "$2" "$3" "$4" "$5" "$6"
+        # Check python for standalone run-job command
+        check_python
+        run_datax_job "$2" "$3" "$4" "$5" "$6" "$PYTHON_BIN"
+        ;;
+    run-all-jobs)
+        if [ -z "$2" ]; then
+            print_error "请指定 Job JSON 文件目录"
+            show_help
+            exit 1
+        fi
+        if [ -z "$3" ]; then
+            print_error "请指定运行日期参数"
+            show_help
+            exit 1
+        fi
+        run_all_datax_jobs "$2" "$3" "$4" "$5" "$6"
         ;;
     help|"")
         show_help
