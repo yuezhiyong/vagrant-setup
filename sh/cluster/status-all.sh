@@ -75,7 +75,7 @@ check_all_status() {
         local ports=""
         $SSH_CMD $host "nc -z localhost 2181 2>/dev/null" && ports+="ZK "
         $SSH_CMD $host "nc -z localhost 9092 2>/dev/null" && ports+="Kafka "
-        $SSH_CMD $host "nc -z localhost 9000 2>/dev/null" && ports+="HDFS "
+        $SSH_CMD $host "nc -z localhost 8020 2>/dev/null" && ports+="HDFS "
         $SSH_CMD $host "nc -z localhost 8088 2>/dev/null" && ports+="YARN "
         echo "${ports:-无服务运行}"
     done

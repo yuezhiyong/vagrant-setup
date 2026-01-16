@@ -199,7 +199,7 @@ stop_kafka_node() {
     run_on_host $host "cd $KAFKA_HOME && bin/kafka-server-stop.sh"
     
     # 等待停止
-    sleep 5
+    sleep 10
     if ! run_on_host $host "pgrep -f 'kafka.Kafka' >/dev/null 2>&1"; then
         print_success "$host Kafka已停止"
         return 0

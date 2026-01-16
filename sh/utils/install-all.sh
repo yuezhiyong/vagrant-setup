@@ -14,13 +14,14 @@ export MODULE_BASE="/opt/module"
 ORIG_SCRIPTS_BASE="$SCRIPTS_BASE"
 
 # 加载公共函数库（按依赖顺序）
+source $SCRIPTS_BASE/common/color.sh
+source $SCRIPTS_BASE/common/common.sh
 source $SCRIPTS_BASE/common/config.sh
 
 # 恢复原始的SCRIPTS_BASE值，以确保后续加载的脚本能找到正确位置
 export SCRIPTS_BASE="$ORIG_SCRIPTS_BASE"
 
-source $SCRIPTS_BASE/common/color.sh
-source $SCRIPTS_BASE/common/common.sh
+
 
 # 组件配置
 declare -A COMPONENTS=(
@@ -32,6 +33,7 @@ declare -A COMPONENTS=(
     ["hive"]="apache-hive-*.tar.gz"
     ["datax"]="datax.tar.gz"
     ["maxwell"]="maxwell-*.tar.gz"
+    ["spark"]="spark-*-bin-hadoop*.tgz"
 )
 
 # 期望的安装路径
@@ -44,6 +46,7 @@ declare -A TARGET_PATHS=(
     ["hive"]="$MODULE_BASE/hive"
     ["datax"]="$MODULE_BASE/datax"
     ["maxwell"]="$MODULE_BASE/maxwell"
+    ["spark"]="$MODULE_BASE/spark"
 )
 
 print_install_banner() {
@@ -439,6 +442,31 @@ setup_maxwell_config() {
     fi
 }
 
+setup_spark_config() {
+    print_step "配置Spark"
+    
+    # 检查Spark是否安装
+    local spark_home=$(ssh $MASTER_NODE "ls -d $MODULE_BASE/spark* 2>/dev/null | head -1")
+    if [ -z "$spark_home" ]; then
+        print_warning "未找到Spark安装，跳过配置"
+        return 0
+    fi
+    
+    export SPARK_HOME="$spark_home"
+    
+    # 使用spark-manager.sh的配置功能
+    print_info "使用spark-manager.sh配置Spark..."
+    bash $SCRIPTS_BASE/spark/spark-manager.sh setup
+    
+    if [ $? -eq 0 ]; then
+        print_success "Spark配置完成"
+        return 0
+    else
+        print_error "Spark配置失败"
+        return 1
+    fi
+}
+
 setup_environment_variables() {
     print_step "设置环境变量"
     
@@ -451,6 +479,7 @@ setup_environment_variables() {
     local hive_home=$(ssh $MASTER_NODE "ls -d $MODULE_BASE/hive* 2>/dev/null | head -1")
     local datax_home=$(ssh $MASTER_NODE "ls -d $MODULE_BASE/datax* 2>/dev/null | head -1")
     local maxwell_home=$(ssh $MASTER_NODE "ls -d $MODULE_BASE/maxwell* 2>/dev/null | head -1")
+    local spark_home=$(ssh $MASTER_NODE "ls -d $MODULE_BASE/spark* 2>/dev/null | head -1")
     
     local bashrc_content="
 # ============================================
@@ -479,7 +508,7 @@ export PATH=\$PATH:\$FLUME_HOME/bin
 
 # Hive环境
 export HIVE_HOME=${hive_home:-$MODULE_BASE/hive}
-export PATH=\$PATH:\$HIVE_HOME/bin:\$HIVE_HOME/bin
+export PATH=\$PATH:\$HIVE_HOME/bin
 
 # DataX环境
 export DATAX_HOME=${datax_home:-$MODULE_BASE/datax}
@@ -488,6 +517,10 @@ export PATH=\$PATH:\$DATAX_HOME/bin
 # Maxwell环境
 export MAXWELL_HOME=${maxwell_home:-$MODULE_BASE/maxwell}
 export PATH=\$PATH:\$MAXWELL_HOME/bin
+
+# Spark环境
+export SPARK_HOME=${spark_home:-$MODULE_BASE/spark}
+export PATH=\$PATH:\$SPARK_HOME/bin:\$SPARK_HOME/sbin
 
 # Hadoop进程用户
 export HDFS_NAMENODE_USER=$HDFS_NAMENODE_USER
@@ -505,6 +538,8 @@ alias zstart='$SCRIPTS_BASE/zookeeper/zk-manager.sh start'
 alias zstop='$SCRIPTS_BASE/zookeeper/zk-manager.sh stop'
 alias fstart='$SCRIPTS_BASE/flume/flume-manager.sh start'
 alias fstop='$SCRIPTS_BASE/flume/flume-manager.sh stop'
+alias sstart='$SCRIPTS_BASE/spark/spark-manager.sh start'
+alias sstop='$SCRIPTS_BASE/spark/spark-manager.sh stop'
 alias cstart='$SCRIPTS_BASE/cluster/start-all.sh'
 alias cstop='$SCRIPTS_BASE/cluster/stop-all.sh'
 alias cstatus='$SCRIPTS_BASE/cluster/status-all.sh'
@@ -538,6 +573,7 @@ alias cstatus='$SCRIPTS_BASE/cluster/status-all.sh'
     export HIVE_HOME="${hive_home:-$MODULE_BASE/hive}"
     export DATAX_HOME="${datax_home:-$MODULE_BASE/datax}"
     export MAXWELL_HOME="${maxwell_home:-$MODULE_BASE/maxwell}"
+    export SPARK_HOME="${spark_home:-$MODULE_BASE/spark}"
     
     # 更新配置文件
     update_config_file
@@ -561,6 +597,10 @@ update_config_file() {
         sed -i "s|export ZOOKEEPER_HOME=.*|export ZOOKEEPER_HOME=\"$ZOOKEEPER_HOME\"|" "$config_file"
         sed -i "s|export KAFKA_HOME=.*|export KAFKA_HOME=\"$KAFKA_HOME\"|" "$config_file"
         sed -i "s|export FLUME_HOME=.*|export FLUME_HOME=\"$FLUME_HOME\"|" "$config_file"
+        sed -i "s|export HIVE_HOME=.*|export HIVE_HOME=\"$HIVE_HOME\"|" "$config_file"
+        sed -i "s|export DATAX_HOME=.*|export DATAX_HOME=\"$DATAX_HOME\"|" "$config_file"
+        sed -i "s|export MAXWELL_HOME=.*|export MAXWELL_HOME=\"$MAXWELL_HOME\"|" "$config_file"
+        sed -i "s|export SPARK_HOME=.*|export SPARK_HOME=\"$SPARK_HOME\"|" "$config_file"
         
         print_success "配置文件更新完成"
     fi
@@ -653,25 +693,6 @@ create_directories_structure() {
         # 设置目录权限给vagrant用户
         run_on_host $host "sudo chown vagrant:vagrant $MODULE_BASE"
         
-        # 数据目录
-        #run_on_host $host "sudo mkdir -p $ZK_DATA_DIR $ZK_LOG_DIR"
-        #run_on_host $host "sudo mkdir -p $KAFKA_LOG_DIR $FLUME_LOG_DIR"
-        #run_on_host $host "sudo mkdir -p $LOG_DIR"
-        
-        # 设置数据目录权限
-        #run_on_host $host "sudo chown -R vagrant:vagrant $(dirname $ZK_DATA_DIR) $(dirname $KAFKA_LOG_DIR) $(dirname $FLUME_LOG_DIR) $LOG_DIR 2>/dev/null || true"
-        
-        # Hadoop目录
-        #run_on_host $host "sudo mkdir -p ${HDFS_NAME_DIR[@]} ${HDFS_DATA_DIR[@]} ${HDFS_CHECKPOINT_DIR[@]} ${YARN_NODEMANAGER_DIR[@]}"
-        #run_on_host $host "sudo mkdir -p $MODULE_BASE/hadoop/{tmp,logs}"
-        
-        # 设置Hadoop目录权限
-        #run_on_host $host "sudo chown -R vagrant:vagrant $(dirname ${HDFS_NAME_DIR[0]}) $MODULE_BASE/hadoop 2>/dev/null || true"
-        
-        # 脚本目录
-        #run_on_host $host "sudo mkdir -p $SCRIPTS_BASE"
-        #run_on_host $host "sudo chown vagrant:vagrant $SCRIPTS_BASE 2>/dev/null || true"
-        
         print_success "$host 目录创建完成"
     done
 }
@@ -723,28 +744,28 @@ install_all_components() {
     # 4. 安装组件
     print_step "安装组件"
     
-    # 安装顺序很重要：Java -> Zookeeper -> Hadoop -> Kafka -> Flume -> Hive -> DataX -> Maxwell
-    local components=("jdk" "zookeeper" "hadoop" "kafka" "flume" "hive" "datax" "maxwell")
+    # 安装顺序很重要：Java -> Zookeeper -> Hadoop -> Kafka -> Flume -> Hive -> DataX -> Maxwell -> Spark
+    local components=("jdk" "zookeeper" "hadoop" "kafka" "flume" "hive" "datax" "maxwell" "spark")
     
     for component in "${components[@]}"; do
-        install_component $component || {
+        bash $SCRIPTS_BASE/utils/compont-manager.sh install $component || {
             print_warning "$component 安装失败，继续安装其他组件..."
         }
         sleep 2
     done
     
     # 5. 设置Java环境
-    setup_java || {
+    bash $SCRIPTS_BASE/utils/compont-manager.sh setup java || {
         print_error "Java环境设置失败"
         exit 1
     }
     
     # 6. 配置各个组件
-    setup_hadoop_config || {
+    bash $SCRIPTS_BASE/utils/compont-manager.sh setup hadoop || {
         print_warning "Hadoop配置失败，可能需要手动配置"
     }
     
-    setup_zookeeper_config || {
+    bash $SCRIPTS_BASE/utils/compont-manager.sh setup zookeeper || {
         print_warning "Zookeeper配置失败，可能需要手动配置"
     }
     
@@ -754,24 +775,28 @@ install_all_components() {
         print_warning "Kafka配置失败，可能需要手动配置"
     }
     
-    setup_flume_config || {
+    bash $SCRIPTS_BASE/utils/compont-manager.sh setup flume || {
         print_warning "Flume配置失败，可能需要手动配置"
     }
     
-    setup_hive_config || {
+    bash $SCRIPTS_BASE/utils/compont-manager.sh setup hive || {
         print_warning "Hive配置失败，可能需要手动配置"
     }
     
-    setup_datax_config || {
+    bash $SCRIPTS_BASE/utils/compont-manager.sh setup datax || {
         print_warning "DataX配置失败，可能需要手动配置"
     }
     
-    setup_maxwell_config || {
+    bash $SCRIPTS_BASE/utils/compont-manager.sh setup maxwell || {
         print_warning "Maxwell配置失败，可能需要手动配置"
     }
     
+    bash $SCRIPTS_BASE/utils/compont-manager.sh setup spark || {
+        print_warning "Spark配置失败，可能需要手动配置"
+    }
+    
     # 7. 设置环境变量
-    setup_environment_variables
+    bash $SCRIPTS_BASE/utils/compont-manager.sh setup_env
     
     # 8. 分发脚本
     print_step "分发管理脚本"
@@ -809,24 +834,25 @@ case "$1" in
         
     "components")
         print_step "安装所有组件"
-        for component in jdk zookeeper hadoop kafka flume hive datax maxwell; do
-            install_component $component
+        for component in jdk zookeeper hadoop kafka flume hive datax maxwell spark; do
+            bash $SCRIPTS_BASE/utils/compont-manager.sh install $component
         done
         ;;
         
     "config")
         print_step "配置所有组件"
-        setup_java
-        setup_hadoop_config
-        setup_zookeeper_config
+        bash $SCRIPTS_BASE/utils/compont-manager.sh setup java
+        bash $SCRIPTS_BASE/utils/compont-manager.sh setup hadoop
+        bash $SCRIPTS_BASE/utils/compont-manager.sh setup zookeeper
         # 使用kafka-manager.sh的setup功能来配置Kafka
         print_info "使用kafka-manager.sh配置Kafka集群..."
         bash $SCRIPTS_BASE/kafka/kafka-manager.sh setup
-        setup_flume_config
-        setup_hive_config
-        setup_datax_config
-        setup_maxwell_config
-        setup_environment_variables
+        bash $SCRIPTS_BASE/utils/compont-manager.sh setup flume
+        bash $SCRIPTS_BASE/utils/compont-manager.sh setup hive
+        bash $SCRIPTS_BASE/utils/compont-manager.sh setup datax
+        bash $SCRIPTS_BASE/utils/compont-manager.sh setup maxwell
+        bash $SCRIPTS_BASE/utils/compont-manager.sh setup spark
+        bash $SCRIPTS_BASE/utils/compont-manager.sh setup_env
         ;;
         
     "ssh")

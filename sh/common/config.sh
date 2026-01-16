@@ -68,6 +68,8 @@ export DATAX_HOME="/opt/module/datax"
 # Maxwell配置
 export MAXWELL_HOME="/opt/module/maxwell"
 
+export SPARK_YARN_JAR="hdfs://$MASTER_NODE:8020/spark/spark-jars/*"
+
 # 创建必要的目录
 create_directories() {
     for host in "${CLUSTER_HOSTS[@]}"; do

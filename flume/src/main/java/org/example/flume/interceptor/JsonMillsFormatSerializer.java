@@ -26,6 +26,6 @@ public class JsonMillsFormatSerializer implements JsonInterceptorSerializer {
 
     @Override
     public void configure(ComponentConfiguration componentConfiguration) {
-
+            
     }
 }
