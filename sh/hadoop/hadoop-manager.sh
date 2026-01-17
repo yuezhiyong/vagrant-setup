@@ -36,7 +36,7 @@ is_cluster_formatted() {
     local name_node_dir="${hadoop_tmp_dir}/current"
     
     # 尝试检查 Master 节点上的 NameNode 目录是否存在 VERSION 文件
-    if run_on_host "$MASTER_NODE" "test -f \"$name_node_dir/VERSION\" 2>/dev/null"; then
+    if run_on_host "$MASTER_NODE" "test -f \"$name_node_dir/data/dfs/name/current/VERSION\" 2>/dev/null"; then
         return 0  # 返回 0 表示已格式化
     else
         return 1  # 返回 1 表示未格式化
@@ -135,6 +135,35 @@ stop_yarn() {
     done
 
     print_success "YARN 集群已停止"
+}
+
+# ---------- JobHistory Server ----------
+
+start_historyserver() {
+    print_step "启动 MapReduce JobHistory Server"
+    
+    run_on_host "$MASTER_NODE" "export HADOOP_MAPRED_HOME=$HADOOP_HOME && export HADOOP_COMMON_HOME=$HADOOP_HOME && export HADOOP_HDFS_HOME=$HADOOP_HOME && export HADOOP_YARN_HOME=$HADOOP_HOME && export HADOOP_CONF_DIR=$HADOOP_HOME/etc/hadoop && export HADOOP_USER_CLASSPATH_FIRST=true && export HADOOP_ALLOW_ROOT=true && $HADOOP_HOME/sbin/mr-jobhistory-daemon.sh start historyserver"
+    
+    sleep 3
+    
+    # 检查 History Server 是否成功启动
+    if run_on_host "$MASTER_NODE" "ps aux | grep -v grep | grep historyserver >/dev/null 2>&1"; then
+        print_success "MapReduce JobHistory Server 启动成功"
+        print_info "访问地址: http://$MASTER_NODE:19888"
+    else
+        print_error "MapReduce JobHistory Server 启动失败"
+        return 1
+    fi
+}
+
+stop_historyserver() {
+    print_step "停止 MapReduce JobHistory Server"
+    
+    run_on_host "$MASTER_NODE" "export HADOOP_MAPRED_HOME=$HADOOP_HOME && export HADOOP_COMMON_HOME=$HADOOP_HOME && export HADOOP_HDFS_HOME=$HADOOP_HOME && export HADOOP_YARN_HOME=$HADOOP_HOME && export HADOOP_CONF_DIR=$HADOOP_HOME/etc/hadoop && export HADOOP_USER_CLASSPATH_FIRST=true && export HADOOP_ALLOW_ROOT=true && $HADOOP_HOME/sbin/mr-jobhistory-daemon.sh stop historyserver"
+    
+    sleep 2
+    
+    print_success "MapReduce JobHistory Server 已停止"
 }
 
 # ---------- 状态检查 ----------
@@ -428,16 +457,24 @@ case "$CMD" in
     setup)
         setup_hadoop
         ;;
+    start-historyserver)
+        start_historyserver
+        ;;
+    stop-historyserver)
+        stop_historyserver
+        ;;
     *)
-        echo "用法: $0 {start|stop|restart|status|start-hdfs|stop-hdfs|start-yarn|stop-yarn|format}"
+        echo "用法: $0 {start|stop|restart|status|start-hdfs|stop-hdfs|start-yarn|stop-yarn|start-historyserver|stop-historyserver|format}"
         echo ""
         echo "说明:"
-        echo "  start [format]   启动 HDFS + YARN（可选格式化）"
-        echo "  stop             停止整个 Hadoop"
-        echo "  restart          重启 Hadoop"
-        echo "  status           查看集群状态"
-        echo "  setup            配置 Hadoop 集群"
-        echo "  format           仅格式化 NameNode"
+        echo "  start [format]              启动 HDFS + YARN（可选格式化）"
+        echo "  stop                        停止整个 Hadoop"
+        echo "  restart                     重启 Hadoop"
+        echo "  status                      查看集群状态"
+        echo "  setup                       配置 Hadoop 集群"
+        echo "  format                      仅格式化 NameNode"
+        echo "  start-historyserver         启动 JobHistory Server"
+        echo "  stop-historyserver          停止 JobHistory Server"
         exit 1
         ;;
 esac

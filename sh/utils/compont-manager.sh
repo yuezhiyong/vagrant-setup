@@ -572,7 +572,7 @@ reinstall_component() {
     install_single_component $component
 }
 
-case "$1" in
+case "${1:-}" in
     "status")
         show_component_status
         ;;
