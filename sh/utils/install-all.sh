@@ -552,16 +552,17 @@ alias cstatus='$SCRIPTS_BASE/cluster/status-all.sh'
         # 备份原有的.bashrc
         run_on_host $host "cp ~/.bashrc ~/.bashrc.backup.\$(date +%Y%m%d) 2>/dev/null || true"
         
-        # 移除旧的环境变量设置
-        run_on_host $host "sed -i '/大数据集群环境变量/,/============================================/d' ~/.bashrc"
-        
-        # 添加新的环境变量
-        echo "$bashrc_content" | run_on_host $host "cat >> ~/.bashrc"
+        # 检查环境变量是否已存在，如果不存在则添加
+        if ! run_on_host $host "grep -q '# 大数据集群环境变量' ~/.bashrc 2>/dev/null"; then
+            # 添加新的环境变量
+            echo "$bashrc_content" | run_on_host $host "cat >> ~/.bashrc"
+            print_success "$host: 环境变量设置完成"
+        else
+            print_info "$host: 环境变量已存在，跳过设置"
+        fi
         
         # 立即生效
         run_on_host $host "source ~/.bashrc"
-        
-        print_success "$host: 环境变量设置完成"
     done
     
     # 更新当前脚本的环境变量

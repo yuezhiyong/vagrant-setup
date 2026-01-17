@@ -29,6 +29,20 @@ check_port() {
     run_on_host "$host" "nc -z localhost $port >/dev/null 2>&1"
 }
 
+is_cluster_formatted() {
+    # 检查 NameNode 是否已经格式化
+    # 在 Hadoop 3.x 中，格式化的集群会在 NameNode 数据目录下创建 VERSION 文件
+    local hadoop_tmp_dir="$MODULE_BASE/hadoop/data"
+    local name_node_dir="${hadoop_tmp_dir}/current"
+    
+    # 尝试检查 Master 节点上的 NameNode 目录是否存在 VERSION 文件
+    if run_on_host "$MASTER_NODE" "test -f \"$name_node_dir/VERSION\" 2>/dev/null"; then
+        return 0  # 返回 0 表示已格式化
+    else
+        return 1  # 返回 1 表示未格式化
+    fi
+}
+
 # ---------- HDFS ----------
 
 format_namenode() {
@@ -46,6 +60,15 @@ format_namenode() {
 
 start_hdfs() {
     print_step "启动 HDFS (Hadoop 3.x)"
+    
+    # 检查集群是否已经格式化，如果未格式化且没有传递 format 参数，则提示用户
+    if ! is_cluster_formatted && [ "$1" != "format" ]; then
+        print_warning "⚠️ 警告：Hadoop 集群尚未格式化！"
+        print_warning "⚠️ 如果这是第一次启动，请先运行 '$0 format' 或 '$0 start format' 来格式化集群。"
+        print_warning "⚠️ 否则集群可能无法正常启动。"
+        read -p "您确定要继续启动吗？(y/N): " confirm
+        [ "$confirm" = "y" ] || return 1
+    fi
 
     if [ "$1" = "format" ]; then
         format_namenode "force"
@@ -240,6 +263,10 @@ EOF
                 <value>$YARN_NODE</value>
         </property>
         <property>
+                <name>yarn.resourcemanager.webapp.address</name>
+                <value>0.0.0.0:8088</value>
+        </property>
+        <property>
                 <name>yarn.nodemanager.env-whitelist</name>
                 <value>JAVA_HOME,HADOOP_COMMON_HOME,HADOOP_HDFS_HOME,HADOOP_CONF_HOME,CLASSPATH_PREPEND_DISTCACHE,HADOOP_YARN_HOME,HADOOP_MAPRED_HOME</value>
         </property>
@@ -350,14 +377,14 @@ EOF
 }
 
 
-is_hdfs_available() {
-    run_on_host "$MASTER_NODE" \
-        "export HDFS_NAMENODE_USER=$HDFS_NAMENODE_USER && export HDFS_DATANODE_USER=$HDFS_DATANODE_USER && export HDFS_SECONDARYNAMENODE_USER=$HDFS_SECONDARYNAMENODE_USER && export HADOOP_ALLOW_ROOT=true && $HADOOP_HOME/bin/hdfs dfs -ls / >/dev/null 2>&1"
-}
-
 get_datanode_status() {
     run_on_host "$MASTER_NODE" \
         "export HDFS_NAMENODE_USER=$HDFS_NAMENODE_USER && export HDFS_DATANODE_USER=$HDFS_DATANODE_USER && export HDFS_SECONDARYNAMENODE_USER=$HDFS_SECONDARYNAMENODE_USER && export HADOOP_ALLOW_ROOT=true && $HADOOP_HOME/bin/hdfs dfsadmin -report 2>/dev/null"
+}
+
+is_hdfs_available() {
+    run_on_host "$MASTER_NODE" \
+        "export HDFS_NAMENODE_USER=$HDFS_NAMENODE_USER && export HDFS_DATANODE_USER=$HDFS_DATANODE_USER && export HDFS_SECONDARYNAMENODE_USER=$HDFS_SECONDARYNAMENODE_USER && export HADOOP_ALLOW_ROOT=true && $HADOOP_HOME/bin/hdfs dfs -ls / >/dev/null 2>&1"
 }
 
 # ---------- 命令入口 ----------

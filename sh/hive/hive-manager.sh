@@ -286,7 +286,7 @@ EOF
         cat > "$SPARK_HOME/conf/spark-defaults.conf" << EOF
 spark.master                    yarn
 spark.eventLog.enabled          true
-spark.eventLog.dir              hdfs://$(hostname):8020/spark/events
+spark.eventLog.dir              hdfs://$(hostname):8020/spark/eventLog
 spark.serializer                org.apache.spark.serializer.KryoSerializer
 spark.sql.adaptive.enabled      true
 spark.sql.adaptive.coalescePartitions.enabled  true

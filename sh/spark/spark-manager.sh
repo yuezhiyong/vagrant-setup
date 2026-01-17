@@ -66,14 +66,14 @@ configure_spark() {
 export JAVA_HOME=$JAVA_HOME
 export HADOOP_HOME=$HADOOP_HOME
 export SPARK_HOME=$SPARK_HOME
-export SPARK_DIST_CLASSPATH=$(hadoop classpath)
-export SPARK_MASTER_HOST=$(hostname)
+export SPARK_DIST_CLASSPATH=\$($HADOOP_HOME/bin/hadoop classpath)
+export SPARK_MASTER_HOST=\$(hostname)
 export SPARK_WORKER_MEMORY=1g
 export SPARK_WORKER_CORES=1
 export LD_LIBRARY_PATH=$HADOOP_HOME/lib/native
 export SPARK_DAEMON_JAVA_OPTS="-Djava.net.preferIPv4Stack=true"
 export YARN_CONF_DIR=$HADOOP_HOME/etc/hadoop
-export SPARK_HISTORY_OPTS="-Dspark.history.ui.port=18080 -Dspark.history.retainedApplications=100 -Dspark.history.fs.logDirectory=hdfs://${MASTERNODE}:8020/spark/eventLog"
+export SPARK_HISTORY_OPTS="-Dspark.history.ui.port=18080 -Dspark.history.retainedApplications=100 -Dspark.history.fs.logDirectory=hdfs://${MASTER_NODE}:8020/spark/eventLog"
 EOF
 
     # spark-defaults.conf
@@ -210,6 +210,54 @@ status() {
     fi
 }
 
+# ------------------ 测试 Spark Pi ------------------
+testSparkPi() {
+    print_info "运行 Spark Pi 测试..."
+    
+    if [ ! -d "$SPARK_HOME" ]; then
+        print_error "Spark 未安装"
+        return 1
+    fi
+    
+    # 检查 Spark Master 是否正在运行
+    MASTER_PID_FILE=""
+    for file in $SPARK_HOME/run/spark-*-org.apache.spark.deploy.master.Master-*.pid; do
+        if [ -f "$file" ]; then
+            MASTER_PID_FILE="$file"
+            break
+        fi
+    done
+    
+    if [ -n "$MASTER_PID_FILE" ] && [ -f "$MASTER_PID_FILE" ]; then
+        MASTER_PID=$(cat "$MASTER_PID_FILE")
+        if ps -p "$MASTER_PID" > /dev/null 2>&1; then
+            print_info "Spark Master 正在运行 (PID: $MASTER_PID)"
+            print_info "使用集群模式运行 Pi 示例..."
+            # 使用集群模式运行 Pi 示例
+            $SPARK_HOME/bin/spark-submit \
+                --class org.apache.spark.examples.SparkPi \
+                --master spark://$(hostname):7077 \
+                --total-executor-cores 2 \
+                --executor-memory 512m \
+                $SPARK_HOME/examples/jars/spark-examples_*.jar 10 2>&1
+        else
+            print_warning "Spark Master 未运行，将以本地模式运行 Pi 测试"
+            print_info "使用本地模式运行 Pi 示例..."
+            $SPARK_HOME/bin/spark-submit \
+                --class org.apache.spark.examples.SparkPi \
+                --master local[2] \
+                $SPARK_HOME/examples/jars/spark-examples_*.jar 10 2>&1
+        fi
+    else
+        print_warning "Spark Master 未运行，将以本地模式运行 Pi 测试"
+        print_info "使用本地模式运行 Pi 示例..."
+        $SPARK_HOME/bin/spark-submit \
+            --class org.apache.spark.examples.SparkPi \
+            --master local[2] \
+            $SPARK_HOME/examples/jars/spark-examples_*.jar 10 2>&1
+    fi
+}
+
 # ------------------ 主入口 ------------------
 case "$ACTION" in
     install)
@@ -241,13 +289,28 @@ case "$ACTION" in
     worker-stop)
         stop_workers
         ;;
+    test)
+        testSparkPi
+        ;;
     "")
-        echo "用法: $0 {install|setup|start|stop|status|master-start|master-stop|worker-start|worker-stop}"
+        echo "用法: $0 {install|setup|start|stop|status|master-start|master-stop|worker-start|worker-stop|test}"
+        echo ""
+        echo "命令说明:"
+        echo "  install         安装 Spark"
+        echo "  setup           配置 Spark 集群环境"
+        echo "  start           启动 Spark 集群 (Master + Workers)"
+        echo "  stop            停止 Spark 集群 (Master + Workers)"
+        echo "  status          查看 Spark 集群状态"
+        echo "  master-start    启动 Spark Master"
+        echo "  master-stop     停止 Spark Master"
+        echo "  worker-start    启动 Spark Workers"
+        echo "  worker-stop     停止 Spark Workers"
+        echo "  test            运行 Spark Pi 测试 (验证安装)"
         exit 1
         ;;
     *)
         echo "未知命令: $1"
-        echo "用法: $0 {install|setup|start|stop|status|master-start|master-stop|worker-start|worker-stop}"
+        echo "用法: $0 {install|setup|start|stop|status|master-start|master-stop|worker-start|worker-stop|test}"
         exit 1
         ;;
 esac
