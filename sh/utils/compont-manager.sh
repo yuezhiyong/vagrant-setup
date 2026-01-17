@@ -29,7 +29,7 @@ declare -A COMPONENTS=(
     ["hive"]="apache-hive-*.tar.gz"
     ["datax"]="datax.tar.gz"
     ["maxwell"]="maxwell-*.tar.gz"
-    ["spark"]="spark-*-bin-hadoop*.tgz"
+    ["spark"]="spark-*-bin-without-hadoop*.tgz"
 )
 
 # 期望的安装路径

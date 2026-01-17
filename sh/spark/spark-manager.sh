@@ -78,7 +78,7 @@ EOF
 
     # spark-defaults.conf
     cat > "$SPARK_HOME/conf/spark-defaults.conf" <<EOF
-spark.master                     spark://$(hostname):7077
+spark.master                     yarn
 spark.eventLog.enabled           true
 spark.eventLog.dir               hdfs://$(hostname):8020/spark/eventLog
 spark.serializer                 org.apache.spark.serializer.KryoSerializer
@@ -236,7 +236,7 @@ testSparkPi() {
             # 使用集群模式运行 Pi 示例
             $SPARK_HOME/bin/spark-submit \
                 --class org.apache.spark.examples.SparkPi \
-                --master spark://$(hostname):7077 \
+                --master yarn \
                 --total-executor-cores 2 \
                 --executor-memory 512m \
                 $SPARK_HOME/examples/jars/spark-examples_*.jar 10 2>&1
