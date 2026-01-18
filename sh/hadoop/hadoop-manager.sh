@@ -33,10 +33,10 @@ is_cluster_formatted() {
     # 检查 NameNode 是否已经格式化
     # 在 Hadoop 3.x 中，格式化的集群会在 NameNode 数据目录下创建 VERSION 文件
     local hadoop_tmp_dir="$MODULE_BASE/hadoop/data"
-    local name_node_dir="${hadoop_tmp_dir}/current"
     
     # 尝试检查 Master 节点上的 NameNode 目录是否存在 VERSION 文件
-    if run_on_host "$MASTER_NODE" "test -f \"$name_node_dir/data/dfs/name/current/VERSION\" 2>/dev/null"; then
+    # 根据配置，dfs.name.dir 在 $hadoop_tmp_dir/dfs/name/current/VERSION
+    if run_on_host "$MASTER_NODE" "test -f \"$hadoop_tmp_dir/dfs/name/current/VERSION\" 2>/dev/null"; then
         return 0  # 返回 0 表示已格式化
     else
         return 1  # 返回 1 表示未格式化
@@ -294,6 +294,10 @@ EOF
         <property>
                 <name>yarn.resourcemanager.webapp.address</name>
                 <value>0.0.0.0:8088</value>
+        </property>
+        <property>
+                <name>yarn.nodemanager.webapp.address</name>
+                <value>0.0.0.0:8042</value>
         </property>
         <property>
                 <name>yarn.nodemanager.env-whitelist</name>
