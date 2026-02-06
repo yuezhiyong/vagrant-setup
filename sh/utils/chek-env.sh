@@ -3,8 +3,16 @@
 # ============================================
 # 环境检查脚本
 # ============================================
+set -euo pipefail
+# Override SCRIPTS_BASE with the actual script location
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPTS_BASE="$(cd "$SCRIPT_DIR/.." && pwd)"
+export SCRIPTS_BASE
+echo "SCRIPTS_BASE: $SCRIPTS_BASE"
 
+source $SCRIPTS_BASE/common/color.sh
 source $SCRIPTS_BASE/common/common.sh
+source $SCRIPTS_BASE/common/config.sh
 
 check_environment() {
     print_step "大数据集群环境检查"
