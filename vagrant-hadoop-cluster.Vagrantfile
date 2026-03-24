@@ -6,8 +6,6 @@ Vagrant.configure("2") do |config|
   # 基础配置
   # ---------------------------
   config.vm.box = "almalinux/8"
-  config.vbguest.auto_update = false
-  config.vbguest.no_remote = true
 
   CLUSTER_NET = "192.168.56"
   NODES       = [101, 102, 103]
@@ -40,31 +38,38 @@ Vagrant.configure("2") do |config|
 
       node.vm.network "private_network",
         ip: "#{CLUSTER_NET}.#{id}"
-      node.vm.network 'forwarded_port',
-        guest: 9864,
-        host: 9864,
-        host_ip: "127.0.0.1",
-        auto_correct: true
+
       if id == MASTER_ID
-        node.vm.network "forwarded_port",
-          guest: 9870,
-          host: 9870,
-          host_ip: "127.0.0.1",
-          auto_correct: true
-        node.vm.network "forwarded_port",
-          guest: 3306,
-          host: 3306,
-          host_ip: "127.0.0.1",
-          auto_correct: true
-      end
+        ports = [
+          [9864, 9864],
+          [9870, 9870],
+          [19888, 19888],
+          [9092, 9092],
+          [3306, 3306],
+          [8080, 8080],
+          [8000, 8000],
+          [10000, 10000],
+          [8160, 8160],
+          [8848, 8848],
+          [8088,8088],
+          [9998,9998],
+          [80, 80]
+        ]
 
-      node.vm.provider "virtualbox" do |vb|
-        vb.name   = "centos-#{id}"
-        vb.memory = 2048
-        vb.cpus   = 1
-        vb.gui    = false
+        ports.each do |host_port, guest_port|
+          node.vm.network "forwarded_port",
+            guest: guest_port,
+            host: host_port,
+            host_ip: "127.0.0.1",
+            auto_correct: true
+        end
+        node.vm.provider "virtualbox" do |vb|
+          vb.name   = "centos-#{id}"
+          vb.memory = 4096
+          vb.cpus   = 1
+          vb.gui    = false
+        end
       end
-
       # ---------------------------
       # 基础系统初始化
       # ---------------------------
@@ -134,14 +139,14 @@ EOF"
         su - $USER -c "chmod 600 ~/.ssh/config"
       SHELL
 
-      node.vm.synced_folder ".", "/vagrant", disabled: true
+      node.vm.synced_folder ".", "/vagrant", type: 'rsync'
     end
   end
 
   # ---------------------------
-  # reload 后配置集群 SSH（只在 master）
-  # ---------------------------
-  config.trigger.after :reload do |t|
+# reload 后配置集群 SSH（只在 master）
+# ---------------------------
+config.trigger.after :reload do |t|
   t.name = "cluster-ssh"
   t.run_remote = {
     inline: <<-SHELL
@@ -151,6 +156,7 @@ EOF"
       PASS=vagrant
       NET=192.168.56
 
+      # 仅在 master 节点执行
       if [ "$(hostname)" != "centos-101" ]; then
         exit 0
       fi
@@ -168,12 +174,32 @@ EOF"
       grep -qxF "$MASTER_KEY" $AUTH_KEYS 2>/dev/null || echo "$MASTER_KEY" >> $AUTH_KEYS
       chmod 600 $AUTH_KEYS
 
-      # ---- 2. worker：第一次用 sshpass 推 key ----
+      # ---- 2. worker: ping + nc 检查端口再推 key ----
       for id in 102 103; do
         IP="$NET.$id"
         NODE="centos-$id"
 
         echo "-> $NODE"
+
+        # 等待节点启动并 ping 通
+        RETRIES=12
+        while [ $RETRIES -gt 0 ]; do
+          if ping -c1 -W1 $IP &>/dev/null; then
+            # ping 通了，检查 SSH 端口是否开放
+            if nc -z -w3 $IP 22; then
+              echo "   $NODE reachable on SSH"
+              break
+            fi
+          fi
+          echo "   Waiting for $NODE SSH to be ready..."
+          sleep 5
+          RETRIES=$((RETRIES-1))
+        done
+
+        if [ $RETRIES -eq 0 ]; then
+          echo "   WARNING: $NODE not reachable, skipping SSH config"
+          continue
+        fi
 
         # 已免密则跳过
         if ssh -o BatchMode=yes \
@@ -184,8 +210,8 @@ EOF"
           continue
         fi
 
+        # 使用密码推送公钥
         echo "   first time, using password auth"
-
         sshpass -p "$PASS" ssh \
           -o StrictHostKeyChecking=no \
           -o UserKnownHostsFile=/dev/null \
